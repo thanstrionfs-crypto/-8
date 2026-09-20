@@ -399,8 +399,11 @@ const CUSHION_RESTITUTION = 0.79;
 const ROLL_DECEL = 48;
 const LINEAR_DRAG = 0.17;
 const STOP_SPEED = 3.5;
-const MAX_PULL_DISTANCE = 180;
 const MIN_SHOT_POWER = 0.04;
+const PC_HOLD_POWER_MAX = 0.22;
+const PC_HOLD_RAMP_MS = 1800;
+const PC_DRAG_RESPONSE_DISTANCE = 95;
+const PC_DRAG_DEAD_ZONE = 3;
 const CURVE_CURVATURE = 0.00165;
 const CURVE_MAX_DISTANCE = 1050;
 const CURVE_PATH_STEP = 2;
@@ -452,6 +455,7 @@ let mouse = { x: W / 2, y: H / 2 };
 let aimAngle = 0;
 let draggingCue = false;
 let dragStart = { x: 0, y: 0 };
+let dragStartTime = 0;
 let power = 0;
 let mobilePower = 0;
 let joystickPointerId = null;
@@ -517,6 +521,7 @@ function newGame(startingPlayer = 0) {
   shot = null;
   draggingCue = false;
   dragStart = { x: 0, y: 0 };
+  dragStartTime = 0;
   power = 0;
   mobilePower = 0;
   aimAngle = 0;
@@ -2393,6 +2398,10 @@ function loop(now) {
     }
   }
 
+  if (draggingCue && state.phase === 'aim' && state.player === 0) {
+    updateDragPower(mouse);
+  }
+
   render();
   requestAnimationFrame(loop);
 }
@@ -2464,8 +2473,17 @@ function updateDragPower(pointer) {
   const dirY = Math.sin(aimAngle);
   const moveX = pointer.x - dragStart.x;
   const moveY = pointer.y - dragStart.y;
-  const backwardDistance = Math.max(0, -(moveX * dirX + moveY * dirY));
-  power = clamp(backwardDistance / MAX_PULL_DISTANCE, 0, 1);
+  const backwardDistance = Math.max(
+    0,
+    -(moveX * dirX + moveY * dirY) - PC_DRAG_DEAD_ZONE
+  );
+  const dragPower = 1 - Math.exp(-backwardDistance / PC_DRAG_RESPONSE_DISTANCE);
+  const heldMs = Math.max(0, performance.now() - dragStartTime);
+  const holdPower = Math.min(
+    PC_HOLD_POWER_MAX,
+    heldMs / PC_HOLD_RAMP_MS * PC_HOLD_POWER_MAX
+  );
+  power = clamp(Math.max(dragPower, holdPower), 0, 1);
 }
 
 function cancelShotDrag(message = '已取消击球') {
@@ -2488,7 +2506,7 @@ function releaseShot() {
 
   if (!canShoot) {
     if (state.phase === 'aim') {
-      state.msg = '未拖动球杆，已取消击球';
+      state.msg = '蓄力不足，已取消击球';
       updateHUD();
     }
     return;
@@ -2536,8 +2554,9 @@ canvas.addEventListener('pointerdown', e => {
     updateAimAngle();
     setDragging(true);
     dragStart = { x: p.x, y: p.y };
+    dragStartTime = performance.now();
     power = 0;
-    state.msg = '朝拉杆方向移动调整力度，松开击球';
+    state.msg = '按住开始蓄力，向后移动可快速增加力度';
     updateHUD();
     if (canvas.setPointerCapture) {
       try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
