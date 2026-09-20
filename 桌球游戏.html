@@ -1496,7 +1496,7 @@ function wallHitDistance(origin, dir) {
   return Math.max(0, distance);
 }
 
-function traceBallPath(origin, dir, ignored, maxBounces = 2) {
+function traceBallPath(origin, dir, ignored, maxBounces = 4) {
   const points = [{ x: origin.x, y: origin.y }];
   let current = { x: origin.x, y: origin.y };
   let velocity = { x: dir.x, y: dir.y };
@@ -1659,17 +1659,21 @@ function traceCurvePath(
     }
 
     if (wallT <= 1) {
-      points.push({
+      const wallPoint = {
         x: current.x + segmentX * wallT,
         y: current.y + segmentY * wallT
-      });
-      return {
-        points,
-        ball: null,
-        pocket: null,
-        clearance: minimumClearance,
-        distance: distance + CURVE_PATH_STEP * wallT
       };
+      points.push(wallPoint);
+
+      if (wallPoint.x <= TL + R + 0.01 && nextVelocity.x < 0) nextVelocity.x *= -1;
+      if (wallPoint.x >= TR - R - 0.01 && nextVelocity.x > 0) nextVelocity.x *= -1;
+      if (wallPoint.y <= TT + R + 0.01 && nextVelocity.y < 0) nextVelocity.y *= -1;
+      if (wallPoint.y >= TB - R - 0.01 && nextVelocity.y > 0) nextVelocity.y *= -1;
+
+      current = wallPoint;
+      velocity = nextVelocity;
+      distance -= CURVE_PATH_STEP * (1 - wallT);
+      continue;
     }
 
     current = next;
@@ -1770,6 +1774,18 @@ function computeAim() {
     hitDistance = wallHitDistance(cueBall, dir);
   }
   if (!Number.isFinite(hitDistance) || hitDistance < 1) hitDistance = 240;
+  let mainPocket = null;
+  if (!hit.ball) {
+    let bestPocketDistance = Infinity;
+    for (const pocket of POCKETS) {
+      const pocketDistance = firstCircleHit(cueBall, dir, pocket.x, pocket.y, pocket.r);
+      if (pocketDistance < hitDistance && pocketDistance < bestPocketDistance) {
+        bestPocketDistance = pocketDistance;
+        mainPocket = pocket;
+      }
+    }
+    if (mainPocket) hitDistance = bestPocketDistance + mainPocket.r * 0.35;
+  }
   const contactX = cueBall.x + dir.x * hitDistance;
   const contactY = cueBall.y + dir.y * hitDistance;
   mainPath = jumpBall
@@ -1797,7 +1813,8 @@ function computeAim() {
     targetPath: null,
     cuePath: null,
     jumpBall,
-    jumpBalls
+    jumpBalls,
+    pocket: mainPocket
   };
 
   if (hit.ball) {
@@ -1817,23 +1834,24 @@ function computeAim() {
         angle / ARC_TURN_DISTANCE
       );
     } else {
-      out.targetPath = traceBallPath(target, objectDir, [target], 2);
+      out.targetPath = traceBallPath(target, objectDir, [target], 4);
     }
 
     const normalSpeed = dir.x * objectDir.x + dir.y * objectDir.y;
-    let cueX = dir.x - normalSpeed * objectDir.x;
-    let cueY = dir.y - normalSpeed * objectDir.y;
+    const transfer = (1 + BALL_RESTITUTION) / 2;
+    let cueX = dir.x - transfer * normalSpeed * objectDir.x;
+    let cueY = dir.y - transfer * normalSpeed * objectDir.y;
     const cueLength = Math.hypot(cueX, cueY);
-    if (cueLength > 0.02) {
+    if (cueLength > 0.002) {
       cueX /= cueLength;
       cueY /= cueLength;
-      out.cuePath = traceBallPath(contact, { x: cueX, y: cueY }, [cueBall, target], 2);
+      out.cuePath = traceBallPath(contact, { x: cueX, y: cueY }, [cueBall, target], 4);
     }
   } else {
     if (skills.jump) {
       out.cuePath = null;
     } else {
-      out.cuePath = traceBallPath(cueBall, dir, predictionIgnore, 3);
+      out.cuePath = traceBallPath(cueBall, dir, predictionIgnore, 4);
     }
   }
 
