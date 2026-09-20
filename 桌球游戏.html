@@ -459,6 +459,7 @@ let dragStartTime = 0;
 let power = 0;
 let mobilePower = 0;
 let joystickPointerId = null;
+let joystickBaseAim = 0;
 let physicsAccumulator = 0;
 
 /* ==================== 创建球 ==================== */
@@ -1344,13 +1345,21 @@ function updateAimJoystick(event) {
   }
   elAimKnob.style.transform = `translate(${dx}px, ${dy}px)`;
   if (Math.hypot(dx, dy) > 3) {
-    aimAngle = Math.atan2(-dx, dy);
+    const targetAngle = Math.atan2(-dx, dy);
+    let delta = targetAngle - joystickBaseAim;
+    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+    aimAngle = joystickBaseAim + delta * 0.32;
   }
+}
+
+function startAimJoystick(event) {
+  joystickBaseAim = aimAngle;
+  elAimKnob.style.transform = 'translate(0, 0)';
+  updateAimJoystick(event);
 }
 
 function resetAimJoystick() {
   joystickPointerId = null;
-  elAimKnob.style.transform = 'translate(0, 0)';
 }
 
 function formatCurveAngle(value) {
@@ -2645,7 +2654,7 @@ elAimJoystick.addEventListener('pointerdown', e => {
   e.preventDefault();
   joystickPointerId = e.pointerId;
   elAimJoystick.setPointerCapture?.(e.pointerId);
-  updateAimJoystick(e);
+  startAimJoystick(e);
 });
 elAimJoystick.addEventListener('pointermove', e => {
   if (e.pointerId !== joystickPointerId) return;
