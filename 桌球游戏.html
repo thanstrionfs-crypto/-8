@@ -219,12 +219,12 @@
   }
 
   @media (max-width: 760px) and (orientation: portrait) {
-    :root { --table-width: min(94vw, calc((100vh - 168px) / 1.7778)); }
-    #tableWrap {
+    html.is-mobile { --table-width: min(94vw, calc((100vh - 168px) / 1.7778)); }
+    html.is-mobile #tableWrap {
       width: var(--table-width);
       height: calc(var(--table-width) * 1.7778);
     }
-    #tableWrap canvas {
+    html.is-mobile #tableWrap canvas {
       position: absolute; left: 50%; top: 50%;
       width: calc(var(--table-width) * 1.7778);
       height: auto;
@@ -234,7 +234,7 @@
   }
 
   @media (max-width: 900px) and (orientation: landscape) {
-    #orientationHint { display: grid; }
+    html.is-mobile #orientationHint { display: grid; }
   }
 </style>
 </head>
@@ -309,7 +309,7 @@
     </button>
     <label class="curve-control" id="curveControl">
       <span id="curveAngleLabel">35°</span>
-      <input id="curveAngle" type="range" min="-60" max="60" step="1" value="35">
+      <input id="curveAngle" type="range" min="-30" max="30" step="0.5" value="17.5">
     </label>
   </div>
   <canvas id="game"></canvas>
@@ -326,6 +326,12 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = 960, H = 540;
 canvas.width = W; canvas.height = H;
+const isMobileDevice = Boolean(
+  navigator.userAgentData?.mobile ||
+  /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches)
+);
+document.documentElement.classList.toggle('is-mobile', isMobileDevice);
 
 const R = 11;                      // 球半径
 const TL = 40, TT = 70, TR = 920, TB = 470;   // 台面内沿
@@ -345,7 +351,7 @@ const MAX_PULL_DISTANCE = 180;
 const MIN_SHOT_POWER = 0.04;
 const CURVE_CURVATURE = 0.00165;
 const CURVE_MAX_DISTANCE = 1050;
-const CURVE_PATH_STEP = 4;
+const CURVE_PATH_STEP = 2;
 
 const POCKETS = [
   { x: TL, y: TT, r: CORNER_POCKET_R }, { x: (TL + TR) / 2, y: TT, r: POCKET_R }, { x: TR, y: TT, r: CORNER_POCKET_R },
@@ -1217,6 +1223,10 @@ function canUseSkills() {
     state.winner === null;
 }
 
+function formatCurveAngle(value) {
+  return `${Number.isInteger(value) ? value : value.toFixed(1)}°`;
+}
+
 function updateSkillUI() {
   const enabled = canUseSkills();
   const curveActive = enabled && skills.arc;
@@ -1227,8 +1237,8 @@ function updateSkillUI() {
   elSkillCurve.classList.toggle('active', curveActive);
   elCurveControl.classList.toggle('show', curveActive);
   elCurveAngle.disabled = !curveActive;
-  elCurveAngle.value = String(skills.curveAngle);
-  elCurveAngleLabel.textContent = `${skills.curveAngle}°`;
+  elCurveAngle.value = String(skills.curveAngle / 2);
+  elCurveAngleLabel.textContent = formatCurveAngle(skills.curveAngle);
 }
 
 function toggleSkill(type) {
@@ -1238,11 +1248,11 @@ function toggleSkill(type) {
   if (type === 'curve') skills.arc = !skills.arc;
 
   if (skills.jump && skills.arc) {
-    state.msg = `跳球 + 弧球：越过全部阻挡后，目标球转弯 ${skills.curveAngle}°`;
+    state.msg = `跳球 + 弧球：越过全部阻挡后，目标球转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else if (skills.jump) {
     state.msg = '跳球已启用：跳过全部阻挡，直达对应球';
   } else if (skills.arc) {
-    state.msg = `弧球已启用：目标球将转弯 ${skills.curveAngle}°`;
+    state.msg = `弧球已启用：目标球将转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else {
     state.msg = '技能已取消';
   }
@@ -1379,6 +1389,24 @@ function traceBallPath(origin, dir, ignored, maxBounces = 2) {
   return { points, ball: null, pocket: null };
 }
 
+function segmentCircleHitT(ax, ay, bx, by, centerX, centerY, radius) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const fx = ax - centerX;
+  const fy = ay - centerY;
+  const a = dx * dx + dy * dy;
+  if (a < 1e-9) return Infinity;
+  const b = 2 * (fx * dx + fy * dy);
+  const c = fx * fx + fy * fy - radius * radius;
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return Infinity;
+  const root = Math.sqrt(discriminant);
+  const near = (-b - root) / (2 * a);
+  if (near >= 0 && near <= 1) return near;
+  const far = (-b + root) / (2 * a);
+  return far >= 0 && far <= 1 ? far : Infinity;
+}
+
 function traceCurvePath(origin, dir, side, ignored = [], curveDistance = CURVE_MAX_DISTANCE) {
   const points = [{ x: origin.x, y: origin.y }];
   let current = { x: origin.x, y: origin.y };
@@ -1400,43 +1428,79 @@ function traceCurvePath(origin, dir, side, ignored = [], curveDistance = CURVE_M
       y: current.y + nextVelocity.y * CURVE_PATH_STEP
     };
 
+    let earliestBall = null;
+    let earliestBallT = Infinity;
+    let earliestPocket = null;
+    let earliestPocketT = Infinity;
+
     for (const ball of balls) {
       if (ball.pocketed || ball === origin || ignored.includes(ball)) continue;
-      const clearance = Math.hypot(next.x - ball.x, next.y - ball.y) - 2 * R;
+      const clearance = pointSegmentDistance(ball.x, ball.y, current.x, current.y, next.x, next.y) - 2 * R;
       minimumClearance = Math.min(minimumClearance, clearance);
-      if (clearance <= 0) {
-        points.push({ x: next.x, y: next.y });
-        return {
-          points,
-          ball,
-          pocket: null,
-          clearance: 0,
-          distance: distance + CURVE_PATH_STEP
-        };
+      const hitT = segmentCircleHitT(current.x, current.y, next.x, next.y, ball.x, ball.y, 2 * R);
+      if (hitT < earliestBallT) {
+        earliestBallT = hitT;
+        earliestBall = ball;
       }
     }
 
     for (const pocket of POCKETS) {
-      if (Math.hypot(next.x - pocket.x, next.y - pocket.y) < pocket.r) {
-        points.push({ x: next.x, y: next.y });
-        return {
-          points,
-          ball: null,
-          pocket,
-          clearance: minimumClearance,
-          distance: distance + CURVE_PATH_STEP
-        };
+      const hitT = segmentCircleHitT(current.x, current.y, next.x, next.y, pocket.x, pocket.y, pocket.r);
+      if (hitT < earliestPocketT) {
+        earliestPocketT = hitT;
+        earliestPocket = pocket;
       }
     }
 
-    if (next.x - R < TL || next.x + R > TR || next.y - R < TT || next.y + R > TB) {
-      points.push({ x: next.x, y: next.y });
+    const segmentX = next.x - current.x;
+    const segmentY = next.y - current.y;
+    let wallT = Infinity;
+    if (segmentX > 1e-9) wallT = Math.min(wallT, (TR - R - current.x) / segmentX);
+    if (segmentX < -1e-9) wallT = Math.min(wallT, (TL + R - current.x) / segmentX);
+    if (segmentY > 1e-9) wallT = Math.min(wallT, (TB - R - current.y) / segmentY);
+    if (segmentY < -1e-9) wallT = Math.min(wallT, (TT + R - current.y) / segmentY);
+    if (wallT < 0) wallT = Infinity;
+
+    if (earliestBall && earliestBallT <= earliestPocketT && earliestBallT <= wallT) {
+      points.push({
+        x: current.x + segmentX * earliestBallT,
+        y: current.y + segmentY * earliestBallT
+      });
+      return {
+        points,
+        ball: earliestBall,
+        pocket: null,
+        clearance: 0,
+        distance: distance + CURVE_PATH_STEP * earliestBallT
+      };
+    }
+
+    if (earliestPocket && earliestPocketT <= wallT) {
+      const travel = earliestPocketT + (1 - earliestPocketT) * 0.08;
+      points.push({
+        x: current.x + segmentX * travel,
+        y: current.y + segmentY * travel
+      });
+      return {
+        points,
+        ball: null,
+        pocket: earliestPocket,
+        clearance: minimumClearance,
+        distance: distance + CURVE_PATH_STEP * travel
+      };
+    }
+
+    if (wallT <= 1) {
+      points.push({
+        x: current.x + segmentX * wallT,
+        y: current.y + segmentY * wallT
+      });
       return {
         points,
         ball: null,
         pocket: null,
         clearance: minimumClearance,
-        distance: distance + CURVE_PATH_STEP
+        distance: distance + CURVE_PATH_STEP * wallT
       };
     }
 
@@ -1864,7 +1928,7 @@ function drawAim() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(
-      `${skills.curveAngle}°`,
+      formatCurveAngle(skills.curveAngle),
       target.x + Math.cos(labelAngle) * (radius + 13),
       target.y + Math.sin(labelAngle) * (radius + 13)
     );
@@ -2146,7 +2210,7 @@ function loop(now) {
 /* ==================== 交互 ==================== */
 function toCanvas(e) {
   const r = canvas.getBoundingClientRect();
-  if (window.matchMedia('(max-width: 760px) and (orientation: portrait)').matches) {
+  if (isMobileDevice && window.matchMedia('(max-width: 760px) and (orientation: portrait)').matches) {
     const scale = r.width / H;
     const rotatedX = (e.clientX - r.left) / scale;
     const rotatedY = (e.clientY - r.top) / scale;
@@ -2337,12 +2401,12 @@ elModeEight.addEventListener('click', beginDiceRoll);
 elSkillJump.addEventListener('click', () => toggleSkill('jump'));
 elSkillCurve.addEventListener('click', () => toggleSkill('curve'));
 elCurveAngle.addEventListener('input', e => {
-  skills.curveAngle = Number(e.target.value);
-  elCurveAngleLabel.textContent = `${skills.curveAngle}°`;
+  skills.curveAngle = Number(e.target.value) * 2;
+  elCurveAngleLabel.textContent = formatCurveAngle(skills.curveAngle);
   if (skills.arc) {
     state.msg = skills.jump
-      ? `跳球 + 弧球：越过阻挡后目标球转弯 ${skills.curveAngle}°`
-      : `弧球已启用：目标球将转弯 ${skills.curveAngle}°`;
+      ? `跳球 + 弧球：越过阻挡后目标球转弯 ${formatCurveAngle(skills.curveAngle)}`
+      : `弧球已启用：目标球将转弯 ${formatCurveAngle(skills.curveAngle)}`;
   }
   updateHUD();
 });
