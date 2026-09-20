@@ -2,17 +2,20 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>彩8桌球 · 8 Ball Pool</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root { --table-width: min(99vw, calc((100vh - 76px) * 1.7778)); }
   html, body {
     height: 100%;
+    width: 100%;
+    max-width: 100%;
     background: radial-gradient(circle at 50% 0%, #1b2735 0%, #0a0d12 70%);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     color: #e8eef5; gap: 10px; overflow: hidden;
+    overscroll-behavior: none;
   }
   #hud {
     width: var(--table-width);
@@ -253,7 +256,7 @@
   }
 
   @media (max-width: 760px) and (orientation: portrait) {
-    html.is-mobile { --table-width: min(100vw, calc((100vh - 96px) / 1.7778)); }
+    html.is-mobile { --table-width: min(100%, calc((100vh - 96px) / 1.7778)); }
     html.is-mobile #tableWrap {
       width: var(--table-width);
       height: calc(var(--table-width) * 1.7778);
@@ -374,6 +377,12 @@ const isMobileDevice = Boolean(
   (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches)
 );
 document.documentElement.classList.toggle('is-mobile', isMobileDevice);
+if (isMobileDevice) {
+  document.addEventListener('gesturestart', event => event.preventDefault(), { passive: false });
+  document.addEventListener('gesturechange', event => event.preventDefault(), { passive: false });
+  document.addEventListener('gestureend', event => event.preventDefault(), { passive: false });
+  document.addEventListener('dblclick', event => event.preventDefault(), { passive: false });
+}
 
 const R = 11;                      // 球半径
 const TL = 40, TT = 70, TR = 920, TB = 470;   // 台面内沿
@@ -1381,7 +1390,7 @@ function toggleSkill(type) {
 function selectJumpTargetAt(point) {
   if (!skills.jump) return false;
   let selected = null;
-  let bestDistance = R + 10;
+  let bestDistance = 30;
   for (const ball of balls) {
     if (ball.pocketed || ball === cueBall) continue;
     const distance = Math.hypot(point.x - ball.x, point.y - ball.y);
@@ -1392,7 +1401,8 @@ function selectJumpTargetAt(point) {
   }
   if (!selected) return false;
   skills.jumpTarget = selected;
-  state.msg = `跳球目标已选择：${selected.num} 号球`;
+  aimAngle = Math.atan2(selected.y - cueBall.y, selected.x - cueBall.x);
+  state.msg = `跳球目标已选择：${selected.num} 号球，已自动瞄准`;
   updateHUD();
   return true;
 }
@@ -1721,22 +1731,33 @@ function sampleJumpPath(startX, startY, endX, endY, height, segments = 28) {
 
 function computeAim() {
   const dir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
+  const overlappingBalls = balls.filter(ball =>
+    ball !== cueBall &&
+    !ball.pocketed &&
+    Math.hypot(ball.x - cueBall.x, ball.y - cueBall.y) < 2 * R - 0.5
+  );
+  const predictionIgnore = [cueBall, ...overlappingBalls];
   let hit;
   let jumpBall = null;
   let jumpBalls = [];
   let mainPath = null;
 
-  hit = raycast(cueBall, dir, [cueBall]);
+  hit = raycast(cueBall, dir, predictionIgnore);
   if (skills.jump && hit.ball) {
     const jumpPlan = findJumpTarget(dir, skills.jumpTarget);
     if (jumpPlan.target) {
       jumpBall = jumpPlan.target;
       jumpBalls = jumpPlan.skipped;
-      hit = raycast(cueBall, dir, [cueBall, ...jumpBalls]);
+      hit = raycast(cueBall, dir, [cueBall, ...overlappingBalls, ...jumpBalls]);
     }
   }
-  const contactX = cueBall.x + dir.x * hit.t;
-  const contactY = cueBall.y + dir.y * hit.t;
+  let hitDistance = hit.t;
+  if (!Number.isFinite(hitDistance) || hitDistance < 1) {
+    hitDistance = wallHitDistance(cueBall, dir);
+  }
+  if (!Number.isFinite(hitDistance) || hitDistance < 1) hitDistance = 240;
+  const contactX = cueBall.x + dir.x * hitDistance;
+  const contactY = cueBall.y + dir.y * hitDistance;
   mainPath = jumpBall
     ? sampleJumpPath(
       cueBall.x,
@@ -1798,7 +1819,7 @@ function computeAim() {
     if (skills.jump) {
       out.cuePath = null;
     } else {
-      out.cuePath = traceBallPath(cueBall, dir, [cueBall], 3);
+      out.cuePath = traceBallPath(cueBall, dir, predictionIgnore, 3);
     }
   }
 
@@ -1957,19 +1978,26 @@ function drawBall(b) {
 }
 
 function drawPredictionPath(points, startColor, endColor, width, dash) {
-  if (!points || points.length < 2) return;
-  const start = points[0];
-  const end = points[points.length - 1];
-  const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
-  gradient.addColorStop(0, startColor);
-  gradient.addColorStop(1, endColor);
+  const validPoints = (points || []).filter(point =>
+    Number.isFinite(point.x) && Number.isFinite(point.y)
+  );
+  if (validPoints.length < 2) return;
+  const start = validPoints[0];
+  const end = validPoints[validPoints.length - 1];
+  let strokeStyle = startColor;
+  if (Math.hypot(end.x - start.x, end.y - start.y) > 0.5) {
+    const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+    gradient.addColorStop(0, startColor);
+    gradient.addColorStop(1, endColor);
+    strokeStyle = gradient;
+  }
 
   ctx.beginPath();
   ctx.moveTo(start.x, start.y);
-  for (let index = 1; index < points.length; index++) {
-    ctx.lineTo(points[index].x, points[index].y);
+  for (let index = 1; index < validPoints.length; index++) {
+    ctx.lineTo(validPoints[index].x, validPoints[index].y);
   }
-  ctx.strokeStyle = gradient;
+  ctx.strokeStyle = strokeStyle;
   ctx.lineWidth = width;
   ctx.setLineDash(dash);
   ctx.lineCap = 'round';
