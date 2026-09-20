@@ -100,15 +100,16 @@
     width: 86px; min-height: 28px; padding: 3px 7px;
     display: grid; grid-template-columns: 16px 1fr; align-items: center; gap: 4px;
     text-align: left; cursor: pointer;
-    color: #dce8f1; border-radius: 10px;
-    background: rgba(12,22,28,.86); border: 1px solid rgba(255,255,255,.14);
-    box-shadow: 0 8px 24px rgba(0,0,0,.34);
+    color: rgba(231,241,248,.88); border-radius: 10px;
+    background: rgba(12,22,28,.34); border: 1px solid rgba(255,255,255,.11);
+    box-shadow: 0 5px 16px rgba(0,0,0,.18);
+    backdrop-filter: blur(2px);
     transition: transform .16s, border-color .16s, background .16s, opacity .16s;
   }
   .skill-button:hover:not(:disabled) { transform: translateY(-2px); border-color: rgba(105,225,166,.65); }
   .skill-button.active {
-    background: rgba(24,95,67,.9); border-color: #62e6a5;
-    box-shadow: 0 0 22px rgba(98,230,165,.24), 0 10px 28px rgba(0,0,0,.4);
+    background: rgba(24,95,67,.52); border-color: rgba(98,230,165,.78);
+    box-shadow: 0 0 16px rgba(98,230,165,.18), 0 6px 18px rgba(0,0,0,.22);
   }
   .skill-button:disabled { opacity: .35; cursor: default; }
   .skill-icon { grid-row: 1 / 3; font-size: 17px; font-weight: 900; color: #62e6a5; text-align: center; }
@@ -117,8 +118,9 @@
   .curve-control {
     width: 180px; min-height: 28px; padding: 3px 8px;
     display: none; grid-template-columns: auto 1fr; align-items: center; gap: 7px;
-    color: #b9cad8; background: rgba(12,22,28,.86);
-    border: 1px solid rgba(98,230,165,.55); border-radius: 10px;
+    color: rgba(207,221,231,.88); background: rgba(12,22,28,.34);
+    border: 1px solid rgba(98,230,165,.38); border-radius: 10px;
+    backdrop-filter: blur(2px);
   }
   .curve-control.show { display: grid; }
   .curve-control span { font-size: 10px; font-weight: 800; color: #62e6a5; white-space: nowrap; }
@@ -132,8 +134,8 @@
   .aim-joystick, .mobile-shoot, .mobile-power { pointer-events: auto; touch-action: none; }
   .aim-joystick {
     position: relative; width: 58px; height: 58px; border-radius: 50%;
-    background: rgba(8,18,24,.82); border: 1px solid rgba(255,255,255,.28);
-    box-shadow: 0 8px 22px rgba(0,0,0,.36);
+    background: rgba(8,18,24,.36); border: 1px solid rgba(255,255,255,.18);
+    box-shadow: 0 5px 16px rgba(0,0,0,.2); backdrop-filter: blur(2px);
   }
   .aim-knob {
     position: absolute; left: 50%; top: 50%; width: 23px; height: 23px;
@@ -142,15 +144,16 @@
   }
   .mobile-power {
     flex: 1; min-width: 78px; max-width: 126px; padding: 5px 8px;
-    color: #d9e5ef; background: rgba(8,18,24,.82); border-radius: 9px;
-    border: 1px solid rgba(255,255,255,.2);
+    color: rgba(225,236,244,.9); background: rgba(8,18,24,.36); border-radius: 9px;
+    border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(2px);
   }
   .mobile-power label { display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px; }
   .mobile-power input { width: 100%; accent-color: #62e6a5; }
   .mobile-shoot {
     width: 54px; height: 54px; border: 0; border-radius: 50%;
-    color: #0b1711; background: #62e6a5; font-weight: 900; font-size: 12px;
-    box-shadow: 0 8px 22px rgba(0,0,0,.38), 0 0 18px rgba(98,230,165,.24);
+    color: rgba(235,255,245,.95); background: rgba(45,176,113,.58); font-weight: 900; font-size: 12px;
+    border: 1px solid rgba(152,255,204,.56); backdrop-filter: blur(2px);
+    box-shadow: 0 5px 16px rgba(0,0,0,.22), 0 0 14px rgba(98,230,165,.18);
   }
   .mobile-shoot:disabled { opacity: .35; }
 
@@ -381,6 +384,7 @@ const PHYSICS_STEP = 1 / 240;
 const MAX_FRAME_DT = 1 / 20;
 const MAX_PHYSICS_STEPS = 12;
 const BALL_RESTITUTION = 0.965;
+const COLLISION_PASSES = 6;
 const CUSHION_RESTITUTION = 0.79;
 const ROLL_DECEL = 48;
 const LINEAR_DRAG = 0.17;
@@ -577,8 +581,8 @@ function capturePocket(b) {
 }
 
 function resolveBallCollisions() {
-  // 两轮修正可以稳定处理开球堆叠和多球同时接触。
-  for (let pass = 0; pass < 2; pass++) {
+  // 多轮分离同时处理位置重叠、碰撞冲量和库边约束。
+  for (let pass = 0; pass < COLLISION_PASSES; pass++) {
     for (let i = 0; i < balls.length; i++) {
       const a = balls[i];
       if (a.pocketed) continue;
@@ -597,20 +601,25 @@ function resolveBallCollisions() {
 
         if (distance >= 2 * R) continue;
         if (distance < 1e-6) {
-          dx = 0.01;
-          dy = 0;
-          distance = 0.01;
+          const angle = ((i * 37 + j * 19) % 360) * Math.PI / 180;
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          distance = 1;
         }
 
         const nx = dx / distance;
         const ny = dy / distance;
-        const overlap = 2 * R - distance;
-        const correction = overlap * 0.505;
+        const overlap = Math.max(0, 2 * R - distance);
+        const correction = overlap * 0.5 + 0.01;
 
         a.x -= nx * correction;
         a.y -= ny * correction;
         b.x += nx * correction;
         b.y += ny * correction;
+        a.x = clamp(a.x, TL + R, TR - R);
+        a.y = clamp(a.y, TT + R, TB - R);
+        b.x = clamp(b.x, TL + R, TR - R);
+        b.y = clamp(b.y, TT + R, TB - R);
 
         const relativeVx = b.vx - a.vx;
         const relativeVy = b.vy - a.vy;
@@ -633,6 +642,15 @@ function resolveBallCollisions() {
               shot.arcApplied = true;
             }
           }
+        } else if (overlap > 0.02) {
+          const separationSpeed = Math.min(72, overlap * 18);
+          const neededSpeed = Math.max(0, separationSpeed - normalSpeed);
+          if (neededSpeed > 0) {
+            a.vx -= nx * neededSpeed * 0.5;
+            a.vy -= ny * neededSpeed * 0.5;
+            b.vx += nx * neededSpeed * 0.5;
+            b.vy += ny * neededSpeed * 0.5;
+          }
         }
 
         if (shot && shot.firstHit === null) {
@@ -640,6 +658,10 @@ function resolveBallCollisions() {
           else if (b === cueBall) shot.firstHit = a.num;
         }
       }
+    }
+
+    for (const ball of balls) {
+      if (!ball.pocketed) resolveCushion(ball);
     }
   }
 }
@@ -692,6 +714,10 @@ function physicsStep(dt) {
   }
 
   resolveBallCollisions();
+
+  for (const b of balls) {
+    if (!b.pocketed) resolveCushion(b);
+  }
 
   for (const b of balls) {
     if (!b.pocketed) capturePocket(b);
@@ -1131,6 +1157,7 @@ function endShot() {
     state.phase = 'ballinhand';
     cueBall.pocketed = false;
     cueBall.vx = cueBall.vy = 0;
+    Object.assign(cueBall, findFreeCuePosition());
     state.msg = `犯规：${reason}；${playerLabel(1 - me)} 自由球`;
   } else if (!cont) {
     state.player = 1 - me;
@@ -2328,9 +2355,13 @@ function loop(now) {
   }
 
   if (state.phase === 'ballinhand' && state.player === 0 && matchState === 'playing') {
-    cueBall.x = clamp(mouse.x, TL + R, TR - R);
-    cueBall.y = clamp(mouse.y, TT + R, TB - R);
-    cueBall.pocketed = false;
+    const previewX = clamp(mouse.x, TL + R, TR - R);
+    const previewY = clamp(mouse.y, TT + R, TB - R);
+    if (canPlaceCue(previewX, previewY)) {
+      cueBall.x = previewX;
+      cueBall.y = previewY;
+      cueBall.pocketed = false;
+    }
   }
 
   render();
@@ -2365,6 +2396,19 @@ function canPlaceCue(x, y) {
     if (len(b.x - x, b.y - y) < 2 * R + 1) return false;
   }
   return true;
+}
+
+function findFreeCuePosition() {
+  const candidates = [{ x: TL + TW * 0.25, y: TT + TH / 2 }];
+  for (let x = TL + 60; x <= TR - 60; x += 55) {
+    for (let y = TT + 50; y <= TB - 50; y += 48) {
+      candidates.push({ x, y });
+    }
+  }
+  return candidates.find(candidate => canPlaceCue(candidate.x, candidate.y)) || {
+    x: TL + TW * 0.25,
+    y: TT + TH / 2
+  };
 }
 
 function updatePointerPosition(e) {
