@@ -115,14 +115,44 @@
   .skill-name { font-size: 10px; font-weight: 800; }
   .skill-note { display: none; }
   .curve-control {
-    width: 116px; min-height: 28px; padding: 3px 7px;
+    width: 180px; min-height: 28px; padding: 3px 8px;
     display: none; grid-template-columns: auto 1fr; align-items: center; gap: 7px;
     color: #b9cad8; background: rgba(12,22,28,.86);
     border: 1px solid rgba(98,230,165,.55); border-radius: 10px;
   }
   .curve-control.show { display: grid; }
   .curve-control span { font-size: 10px; font-weight: 800; color: #62e6a5; white-space: nowrap; }
-  .curve-control input { width: 62px; accent-color: #62e6a5; cursor: pointer; }
+  .curve-control input { width: 128px; accent-color: #62e6a5; cursor: pointer; }
+  #mobileControls {
+    position: absolute; z-index: 8; left: 5px; right: 5px; bottom: 42px;
+    display: none; align-items: flex-end; justify-content: space-between;
+    gap: 8px; pointer-events: none;
+  }
+  html.is-mobile #mobileControls.visible { display: flex; }
+  .aim-joystick, .mobile-shoot, .mobile-power { pointer-events: auto; touch-action: none; }
+  .aim-joystick {
+    position: relative; width: 58px; height: 58px; border-radius: 50%;
+    background: rgba(8,18,24,.82); border: 1px solid rgba(255,255,255,.28);
+    box-shadow: 0 8px 22px rgba(0,0,0,.36);
+  }
+  .aim-knob {
+    position: absolute; left: 50%; top: 50%; width: 23px; height: 23px;
+    margin: -11.5px; border-radius: 50%; background: #62e6a5;
+    box-shadow: 0 3px 10px rgba(0,0,0,.4);
+  }
+  .mobile-power {
+    flex: 1; min-width: 78px; max-width: 126px; padding: 5px 8px;
+    color: #d9e5ef; background: rgba(8,18,24,.82); border-radius: 9px;
+    border: 1px solid rgba(255,255,255,.2);
+  }
+  .mobile-power label { display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px; }
+  .mobile-power input { width: 100%; accent-color: #62e6a5; }
+  .mobile-shoot {
+    width: 54px; height: 54px; border: 0; border-radius: 50%;
+    color: #0b1711; background: #62e6a5; font-weight: 900; font-size: 12px;
+    box-shadow: 0 8px 22px rgba(0,0,0,.38), 0 0 18px rgba(98,230,165,.24);
+  }
+  .mobile-shoot:disabled { opacity: .35; }
 
   .screen {
     position: fixed; inset: 0; z-index: 20;
@@ -214,12 +244,12 @@
     }
     .skill-button { width: 74px; min-height: 27px; grid-template-columns: 14px 1fr; padding: 3px 5px; }
     .skill-icon { font-size: 14px; }
-    .curve-control { width: 105px; min-height: 27px; padding: 3px 6px; }
-    .curve-control input { width: 52px; }
+    .curve-control { width: 150px; min-height: 27px; padding: 3px 6px; }
+    .curve-control input { width: 100px; }
   }
 
   @media (max-width: 760px) and (orientation: portrait) {
-    html.is-mobile { --table-width: min(94vw, calc((100vh - 168px) / 1.7778)); }
+    html.is-mobile { --table-width: min(98vw, calc((100vh - 132px) / 1.7778)); }
     html.is-mobile #tableWrap {
       width: var(--table-width);
       height: calc(var(--table-width) * 1.7778);
@@ -309,10 +339,18 @@
     </button>
     <label class="curve-control" id="curveControl">
       <span id="curveAngleLabel">35°</span>
-      <input id="curveAngle" type="range" min="-30" max="30" step="0.5" value="17.5">
+      <input id="curveAngle" type="range" min="-60" max="60" step="0.25" value="35">
     </label>
   </div>
   <canvas id="game"></canvas>
+  <div id="mobileControls">
+    <div class="aim-joystick" id="aimJoystick"><span class="aim-knob" id="aimKnob"></span></div>
+    <div class="mobile-power">
+      <label><span>力度</span><span id="mobilePowerLabel">0%</span></label>
+      <input id="mobilePower" type="range" min="0" max="100" step="1" value="0">
+    </div>
+    <button class="mobile-shoot" id="mobileShoot" type="button">击球</button>
+  </div>
 </div>
 <div id="tip">移动鼠标瞄准 · 按住左键朝拉杆方向移动 · 移动越远力度越大 · 松开击球</div>
 <div id="orientationHint"><div><strong>请竖屏使用</strong>手机端已针对竖屏布局优化</div></div>
@@ -336,8 +374,8 @@ document.documentElement.classList.toggle('is-mobile', isMobileDevice);
 const R = 11;                      // 球半径
 const TL = 40, TT = 70, TR = 920, TB = 470;   // 台面内沿
 const TW = TR - TL, TH = TB - TT;
-const POCKET_R = 22;
-const CORNER_POCKET_R = 23;
+const POCKET_R = 25;
+const CORNER_POCKET_R = 26;
 const MAX_SPEED = 1700;
 const PHYSICS_STEP = 1 / 240;
 const MAX_FRAME_DT = 1 / 20;
@@ -352,6 +390,7 @@ const MIN_SHOT_POWER = 0.04;
 const CURVE_CURVATURE = 0.00165;
 const CURVE_MAX_DISTANCE = 1050;
 const CURVE_PATH_STEP = 2;
+const ARC_TURN_DISTANCE = 145;
 
 const POCKETS = [
   { x: TL, y: TT, r: CORNER_POCKET_R }, { x: (TL + TR) / 2, y: TT, r: POCKET_R }, { x: TR, y: TT, r: CORNER_POCKET_R },
@@ -393,13 +432,15 @@ let shot = null;
 let effects = [];
 let aiTimers = [];
 let matchState = 'menu';
-let skills = { jump: false, arc: false, curveAngle: 35 };
+let skills = { jump: false, arc: false, curveAngle: 35, jumpTarget: null };
 
 let mouse = { x: W / 2, y: H / 2 };
 let aimAngle = 0;
 let draggingCue = false;
 let dragStart = { x: 0, y: 0 };
 let power = 0;
+let mobilePower = 0;
+let joystickPointerId = null;
 let physicsAccumulator = 0;
 
 /* ==================== 创建球 ==================== */
@@ -412,7 +453,8 @@ function makeBall(num, x, y) {
     curveSide: 0,
     curveDistance: 0,
     angle: 0,
-    spin: 0
+    spin: 0,
+    curveRate: CURVE_CURVATURE
   };
 }
 
@@ -456,12 +498,13 @@ function newGame(startingPlayer = 0) {
     aiThinking: false,
     combo: [0, 0]
   };
-  skills = { jump: false, arc: false, curveAngle: 35 };
+  skills = { jump: false, arc: false, curveAngle: 35, jumpTarget: null };
   cueBall.jumpAnimation = null;
   shot = null;
   draggingCue = false;
   dragStart = { x: 0, y: 0 };
   power = 0;
+  mobilePower = 0;
   aimAngle = 0;
   physicsAccumulator = 0;
   canvas.classList.remove('dragging');
@@ -585,7 +628,8 @@ function resolveBallCollisions() {
             if (arcBall && (a === cueBall || b === cueBall) && shot.arcAngle !== 0) {
               const angle = Math.abs(shot.arcAngle) * Math.PI / 180;
               arcBall.curveSide = Math.sign(shot.arcAngle);
-              arcBall.curveDistance = angle / CURVE_CURVATURE;
+              arcBall.curveDistance = ARC_TURN_DISTANCE;
+              arcBall.curveRate = angle / ARC_TURN_DISTANCE;
               shot.arcApplied = true;
             }
           }
@@ -606,7 +650,7 @@ function applyCurveToBall(ball, dt) {
   if (speed < 1) return;
 
   const travel = speed * dt;
-  const angle = ball.curveSide * CURVE_CURVATURE * travel;
+  const angle = ball.curveSide * (ball.curveRate || CURVE_CURVATURE) * travel;
   const cosine = Math.cos(angle);
   const sine = Math.sin(angle);
   const vx = ball.vx;
@@ -667,7 +711,7 @@ function doShoot(pw) {
   const speed = 240 + pw * (MAX_SPEED - 240);
   const dx = Math.cos(aimAngle), dy = Math.sin(aimAngle);
   const jumpPlan = skills.jump
-    ? findJumpTarget({ x: dx, y: dy })
+    ? findJumpTarget({ x: dx, y: dy }, skills.jumpTarget)
     : { target: null, skipped: [] };
   const jumpBall = jumpPlan.target;
   const jumpBalls = jumpPlan.skipped;
@@ -679,6 +723,7 @@ function doShoot(pw) {
   for (const ball of balls) {
     ball.curveSide = 0;
     ball.curveDistance = 0;
+    ball.curveRate = CURVE_CURVATURE;
   }
   cueBall.vx = dx * speed;
   cueBall.vy = dy * speed;
@@ -717,6 +762,7 @@ function doShoot(pw) {
 
   skills.jump = false;
   skills.arc = false;
+  skills.jumpTarget = null;
   updateSkillUI();
   state.phase = 'moving';
   state.msg = `${playerLabel(state.player)}${state.breakPending ? '开球中…' : '击球中…'}`;
@@ -1223,6 +1269,48 @@ function canUseSkills() {
     state.winner === null;
 }
 
+function isPortraitMobile() {
+  return isMobileDevice && window.matchMedia('(max-width: 760px) and (orientation: portrait)').matches;
+}
+
+function updateMobileControls() {
+  const enabled = canUseSkills();
+  elMobileControls.classList.toggle('visible', enabled);
+  elMobilePower.disabled = !enabled;
+  elMobileShoot.disabled = !enabled;
+  if (!enabled) {
+    mobilePower = 0;
+    elMobilePower.value = '0';
+    elMobilePowerLabel.textContent = '0%';
+  } else {
+    elMobilePower.value = String(Math.round(mobilePower * 100));
+    elMobilePowerLabel.textContent = `${Math.round(mobilePower * 100)}%`;
+  }
+}
+
+function updateAimJoystick(event) {
+  const rect = elAimJoystick.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  let dx = event.clientX - centerX;
+  let dy = event.clientY - centerY;
+  const radius = rect.width * 0.38;
+  const distance = Math.hypot(dx, dy);
+  if (distance > radius) {
+    dx = dx / distance * radius;
+    dy = dy / distance * radius;
+  }
+  elAimKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+  if (Math.hypot(dx, dy) > 3) {
+    aimAngle = Math.atan2(-dx, dy);
+  }
+}
+
+function resetAimJoystick() {
+  joystickPointerId = null;
+  elAimKnob.style.transform = 'translate(0, 0)';
+}
+
 function formatCurveAngle(value) {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}°`;
 }
@@ -1237,8 +1325,9 @@ function updateSkillUI() {
   elSkillCurve.classList.toggle('active', curveActive);
   elCurveControl.classList.toggle('show', curveActive);
   elCurveAngle.disabled = !curveActive;
-  elCurveAngle.value = String(skills.curveAngle / 2);
+  elCurveAngle.value = String(skills.curveAngle);
   elCurveAngleLabel.textContent = formatCurveAngle(skills.curveAngle);
+  updateMobileControls();
 }
 
 function toggleSkill(type) {
@@ -1246,11 +1335,12 @@ function toggleSkill(type) {
   cancelShotDrag();
   if (type === 'jump') skills.jump = !skills.jump;
   if (type === 'curve') skills.arc = !skills.arc;
+  if (!skills.jump) skills.jumpTarget = null;
 
   if (skills.jump && skills.arc) {
     state.msg = `跳球 + 弧球：越过全部阻挡后，目标球转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else if (skills.jump) {
-    state.msg = '跳球已启用：跳过全部阻挡，直达对应球';
+    state.msg = '跳球已启用：点击球可指定跳球目标';
   } else if (skills.arc) {
     state.msg = `弧球已启用：目标球将转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else {
@@ -1258,6 +1348,25 @@ function toggleSkill(type) {
   }
 
   updateHUD();
+}
+
+function selectJumpTargetAt(point) {
+  if (!skills.jump) return false;
+  let selected = null;
+  let bestDistance = R + 10;
+  for (const ball of balls) {
+    if (ball.pocketed || ball === cueBall) continue;
+    const distance = Math.hypot(point.x - ball.x, point.y - ball.y);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      selected = ball;
+    }
+  }
+  if (!selected) return false;
+  skills.jumpTarget = selected;
+  state.msg = `跳球目标已选择：${selected.num} 号球`;
+  updateHUD();
+  return true;
 }
 
 /* ==================== 头像球组图标 ==================== */
@@ -1407,7 +1516,14 @@ function segmentCircleHitT(ax, ay, bx, by, centerX, centerY, radius) {
   return far >= 0 && far <= 1 ? far : Infinity;
 }
 
-function traceCurvePath(origin, dir, side, ignored = [], curveDistance = CURVE_MAX_DISTANCE) {
+function traceCurvePath(
+  origin,
+  dir,
+  side,
+  ignored = [],
+  curveDistance = CURVE_MAX_DISTANCE,
+  curveRate = CURVE_CURVATURE
+) {
   const points = [{ x: origin.x, y: origin.y }];
   let current = { x: origin.x, y: origin.y };
   let velocity = { x: dir.x, y: dir.y };
@@ -1416,7 +1532,7 @@ function traceCurvePath(origin, dir, side, ignored = [], curveDistance = CURVE_M
 
   for (let distance = 0; distance < pathLimit; distance += CURVE_PATH_STEP) {
     const turningDistance = Math.min(CURVE_PATH_STEP, Math.max(0, curveDistance - distance));
-    const angle = side * CURVE_CURVATURE * turningDistance;
+    const angle = side * curveRate * turningDistance;
     const cosine = Math.cos(angle);
     const sine = Math.sin(angle);
     const nextVelocity = {
@@ -1518,7 +1634,7 @@ function traceCurvePath(origin, dir, side, ignored = [], curveDistance = CURVE_M
   };
 }
 
-function findJumpTarget(dir) {
+function findJumpTarget(dir, forcedTarget = null) {
   const candidates = [];
   let pocketLimit = Infinity;
   for (const pocket of POCKETS) {
@@ -1541,6 +1657,19 @@ function findJumpTarget(dir) {
   }
 
   if (candidates.length === 0) return { target: null, skipped: [] };
+
+  if (forcedTarget && !forcedTarget.pocketed) {
+    const forcedCandidate = candidates.find(item => item.ball === forcedTarget);
+    if (forcedCandidate) {
+      return {
+        target: forcedTarget,
+        skipped: candidates
+          .filter(item => item.ball !== forcedTarget && item.along < forcedCandidate.along)
+          .map(item => item.ball)
+      };
+    }
+  }
+
   candidates.sort((a, b) => b.along - a.along);
   const target = candidates[0].ball;
   const skipped = candidates.slice(1).map(item => item.ball);
@@ -1571,7 +1700,7 @@ function computeAim() {
 
   hit = raycast(cueBall, dir, [cueBall]);
   if (skills.jump && hit.ball) {
-    const jumpPlan = findJumpTarget(dir);
+    const jumpPlan = findJumpTarget(dir, skills.jumpTarget);
     if (jumpPlan.target) {
       jumpBall = jumpPlan.target;
       jumpBalls = jumpPlan.skipped;
@@ -1621,7 +1750,8 @@ function computeAim() {
         objectDir,
         Math.sign(skills.curveAngle),
         [target],
-        angle / CURVE_CURVATURE
+        ARC_TURN_DISTANCE,
+        angle / ARC_TURN_DISTANCE
       );
     } else {
       out.targetPath = traceBallPath(target, objectDir, [target], 2);
@@ -1976,7 +2106,7 @@ function drawCue() {
 }
 
 function drawPowerBar() {
-  if (!draggingCue || state.phase !== 'aim') return;
+  if ((!draggingCue && (!isPortraitMobile() || mobilePower <= 0)) || state.phase !== 'aim') return;
 
   const bw = 190, bh = 11;
   const bx = W / 2 - bw / 2;
@@ -2328,6 +2458,8 @@ canvas.addEventListener('pointerdown', e => {
   }
 
   if (state.phase === 'aim') {
+    if (selectJumpTargetAt(p)) return;
+    if (isPortraitMobile()) return;
     updateAimAngle();
     setDragging(true);
     dragStart = { x: p.x, y: p.y };
@@ -2376,6 +2508,12 @@ const elSkillCurve = document.getElementById('skillCurve');
 const elCurveControl = document.getElementById('curveControl');
 const elCurveAngle = document.getElementById('curveAngle');
 const elCurveAngleLabel = document.getElementById('curveAngleLabel');
+const elMobileControls = document.getElementById('mobileControls');
+const elAimJoystick = document.getElementById('aimJoystick');
+const elAimKnob = document.getElementById('aimKnob');
+const elMobilePower = document.getElementById('mobilePower');
+const elMobilePowerLabel = document.getElementById('mobilePowerLabel');
+const elMobileShoot = document.getElementById('mobileShoot');
 
 function updateHUD() {
   elMsg.textContent = state.msg;
@@ -2401,7 +2539,7 @@ elModeEight.addEventListener('click', beginDiceRoll);
 elSkillJump.addEventListener('click', () => toggleSkill('jump'));
 elSkillCurve.addEventListener('click', () => toggleSkill('curve'));
 elCurveAngle.addEventListener('input', e => {
-  skills.curveAngle = Number(e.target.value) * 2;
+  skills.curveAngle = Number(e.target.value);
   elCurveAngleLabel.textContent = formatCurveAngle(skills.curveAngle);
   if (skills.arc) {
     state.msg = skills.jump
@@ -2409,6 +2547,34 @@ elCurveAngle.addEventListener('input', e => {
       : `弧球已启用：目标球将转弯 ${formatCurveAngle(skills.curveAngle)}`;
   }
   updateHUD();
+});
+elAimJoystick.addEventListener('pointerdown', e => {
+  if (!canUseSkills()) return;
+  e.preventDefault();
+  joystickPointerId = e.pointerId;
+  elAimJoystick.setPointerCapture?.(e.pointerId);
+  updateAimJoystick(e);
+});
+elAimJoystick.addEventListener('pointermove', e => {
+  if (e.pointerId !== joystickPointerId) return;
+  e.preventDefault();
+  updateAimJoystick(e);
+});
+elAimJoystick.addEventListener('pointerup', e => {
+  if (e.pointerId === joystickPointerId) resetAimJoystick();
+});
+elAimJoystick.addEventListener('pointercancel', resetAimJoystick);
+elMobilePower.addEventListener('input', e => {
+  mobilePower = Number(e.target.value) / 100;
+  power = mobilePower;
+  elMobilePowerLabel.textContent = `${Math.round(mobilePower * 100)}%`;
+});
+elMobileShoot.addEventListener('click', () => {
+  if (!canUseSkills() || mobilePower < MIN_SHOT_POWER) return;
+  const shotPower = mobilePower;
+  mobilePower = 0;
+  power = 0;
+  doShoot(shotPower);
 });
 drawDie(elYourDie, 1);
 drawDie(elAiDie, 1);
