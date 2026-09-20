@@ -1,0 +1,2219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>彩8桌球 · 8 Ball Pool</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root { --table-width: min(97vw, calc((100vh - 158px) * 1.7778)); }
+  html, body {
+    height: 100%;
+    background: radial-gradient(circle at 50% 0%, #1b2735 0%, #0a0d12 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #e8eef5; gap: 10px; overflow: hidden;
+  }
+  #hud {
+    width: var(--table-width);
+    display: flex; justify-content: space-between; align-items: stretch;
+    padding: 0 6px; user-select: none;
+  }
+  .player-panel {
+    width: 258px; min-height: 58px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 11px; border-radius: 12px;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.08);
+    transition: .25s; font-size: 14px; letter-spacing: .3px;
+  }
+  .player-panel.active {
+    background: rgba(80,200,120,.16);
+    border-color: rgba(80,200,120,.55);
+    box-shadow: 0 0 22px rgba(80,200,120,.25);
+  }
+  .avatar {
+    position: relative; flex: 0 0 42px;
+    width: 42px; height: 42px; border-radius: 50%;
+    display: grid; place-items: center;
+    color: #f7fbff; font-weight: 800; font-size: 15px;
+    background: linear-gradient(145deg, #34526c, #172330);
+    border: 2px solid rgba(255,255,255,.2);
+    box-shadow: inset 0 2px 8px rgba(255,255,255,.08);
+  }
+  #p2 .avatar { background: linear-gradient(145deg, #74502e, #2c1d13); }
+  .group-badge {
+    position: absolute; right: -5px; bottom: -6px;
+    min-width: 24px; height: 18px; padding: 0 5px;
+    border-radius: 9px; display: none; place-items: center;
+    font-size: 10px; line-height: 18px; text-align: center;
+    background: #536273; border: 1px solid rgba(255,255,255,.3);
+    box-shadow: 0 3px 9px rgba(0,0,0,.45);
+  }
+  .group-badge.show { display: grid; }
+  .group-badge.solid { background: #d39d00; color: #161616; }
+  .group-badge.stripe { background: #f3f1e8; color: #123b8a; }
+  .player-info { min-width: 0; display: grid; gap: 5px; }
+  .player-name {
+    display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-weight: 650; color: #dce7f2;
+  }
+  .ball-strip { min-height: 17px; display: flex; align-items: center; gap: 3px; }
+  .mini-ball {
+    position: relative; width: 16px; height: 16px; border-radius: 50%;
+    flex: 0 0 16px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.52);
+    box-shadow: 0 2px 5px rgba(0,0,0,.4);
+  }
+  .mini-ball::after {
+    content: attr(data-num); position: absolute; inset: 4px 3px 4px 3px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: rgba(255,255,255,.92); color: #101317;
+    font-size: 7px; line-height: 8px; text-align: center; font-weight: 800;
+  }
+  #msg {
+    font-size: 15px; color: #9fb0c3; letter-spacing: .5px;
+    text-align: center; flex: 1; display: grid; place-items: center;
+    padding: 0 14px;
+  }
+  canvas {
+    display: block; border-radius: 18px;
+    box-shadow: 0 26px 70px rgba(0,0,0,.7);
+    cursor: crosshair; touch-action: none;
+    width: var(--table-width); height: auto;
+  }
+  canvas.dragging { cursor: grabbing; }
+  canvas.ai-turn { cursor: default; }
+  #tip { font-size: 12px; color: #5d6b7a; letter-spacing: 1px; }
+  #skillDock {
+    width: var(--table-width); min-height: 40px;
+    display: flex; justify-content: center; align-items: center; gap: 8px;
+    transition: opacity .2s, visibility .2s;
+  }
+  #skillDock.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  .skill-button {
+    width: 152px; min-height: 38px; padding: 5px 10px;
+    display: grid; grid-template-columns: 22px 1fr; grid-template-rows: auto auto;
+    align-items: center; gap: 0 7px; text-align: left; cursor: pointer;
+    color: #dce8f1; border-radius: 10px;
+    background: rgba(12,22,28,.86); border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 8px 24px rgba(0,0,0,.34);
+    transition: transform .16s, border-color .16s, background .16s, opacity .16s;
+  }
+  .skill-button:hover:not(:disabled) { transform: translateY(-2px); border-color: rgba(105,225,166,.65); }
+  .skill-button.active {
+    background: rgba(24,95,67,.9); border-color: #62e6a5;
+    box-shadow: 0 0 22px rgba(98,230,165,.24), 0 10px 28px rgba(0,0,0,.4);
+  }
+  .skill-button:disabled { opacity: .35; cursor: default; }
+  .skill-icon { grid-row: 1 / 3; font-size: 20px; font-weight: 900; color: #62e6a5; text-align: center; }
+  .skill-name { font-size: 12px; font-weight: 800; }
+  .skill-note { font-size: 8px; color: #8297a7; letter-spacing: .2px; }
+
+  .screen {
+    position: fixed; inset: 0; z-index: 20;
+    display: grid; place-items: center; visibility: hidden; opacity: 0;
+    pointer-events: none; transition: opacity .3s ease, visibility .3s;
+    background:
+      linear-gradient(120deg, rgba(7,12,18,.94), rgba(9,22,22,.88)),
+      radial-gradient(circle at 65% 35%, rgba(35,120,83,.24), transparent 44%);
+    backdrop-filter: blur(7px);
+  }
+  .screen.visible { visibility: visible; opacity: 1; pointer-events: auto; }
+  .start-wrap { width: min(760px, 90vw); text-align: center; }
+  .eyebrow { color: #61d89a; font-size: 12px; font-weight: 800; letter-spacing: 4px; margin-bottom: 12px; }
+  .start-wrap h1 { font-size: clamp(42px, 7vw, 76px); letter-spacing: 2px; line-height: 1; }
+  .start-copy { color: #93a6b7; font-size: 15px; margin-top: 14px; }
+  .mode-card {
+    width: min(430px, 86vw); margin: 38px auto 0; padding: 18px 20px;
+    display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 18px;
+    color: #eef6f0; text-align: left; cursor: pointer;
+    background: linear-gradient(135deg, rgba(31,117,78,.38), rgba(15,27,31,.9));
+    border: 1px solid rgba(78,216,145,.5); border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.45), inset 0 1px rgba(255,255,255,.08);
+    transition: transform .2s, border-color .2s, box-shadow .2s;
+  }
+  .mode-card:hover { transform: translateY(-3px); border-color: #66dfa4; box-shadow: 0 24px 70px rgba(0,0,0,.5), 0 0 30px rgba(63,191,126,.16); }
+  .mode-balls { position: relative; width: 64px; height: 54px; }
+  .mode-ball {
+    position: absolute; width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center; border: 2px solid rgba(255,255,255,.72);
+    box-shadow: 0 8px 18px rgba(0,0,0,.38); font-size: 13px; font-weight: 800;
+  }
+  .mode-ball.eight { left: 0; top: 0; background: #111; color: #fff; }
+  .mode-ball.stripe { right: 0; bottom: 0; color: #16213a; background: linear-gradient(180deg,#f8f6ef 0 27%,#1a54c8 27% 73%,#f8f6ef 73%); }
+  .mode-title { display: block; font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+  .mode-desc { display: block; color: #9db0bf; font-size: 12px; line-height: 1.55; }
+  .mode-enter { color: #65e2a7; font-size: 26px; }
+  .start-note { margin-top: 22px; color: #5f7283; font-size: 12px; letter-spacing: 1px; }
+
+  .dice-wrap { width: min(620px, 90vw); text-align: center; }
+  .dice-wrap h2 { font-size: clamp(28px, 5vw, 44px); }
+  .dice-subtitle { margin-top: 8px; color: #8295a7; }
+  .dice-board {
+    margin-top: 34px; padding: 26px;
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 28px;
+    border-radius: 14px; background: rgba(255,255,255,.045);
+    border: 1px solid rgba(255,255,255,.09);
+  }
+  .dice-player { display: grid; justify-items: center; gap: 12px; color: #cbd8e3; font-weight: 700; }
+  .dice {
+    width: 92px; height: 92px; padding: 11px;
+    display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+    background: #f4f1e9; border-radius: 16px; border: 2px solid #fff;
+    box-shadow: 0 16px 34px rgba(0,0,0,.42), inset 0 -5px 10px rgba(0,0,0,.09);
+  }
+  .dice.rolling { animation: diceShake .18s linear infinite; }
+  .pip { width: 14px; height: 14px; place-self: center; border-radius: 50%; background: #18202a; opacity: 0; }
+  .pip.show { opacity: 1; }
+  .dice-vs { color: #5d7184; font-weight: 900; letter-spacing: 1px; }
+  .dice-result { min-height: 42px; margin-top: 22px; font-size: 18px; color: #c8d5df; }
+  .dice-result strong { color: #65e2a7; }
+  @keyframes diceShake {
+    0%, 100% { transform: translate(0,0) rotate(0); }
+    25% { transform: translate(-2px,1px) rotate(-3deg); }
+    75% { transform: translate(2px,-1px) rotate(3deg); }
+  }
+
+  @media (max-width: 760px) {
+    :root { --table-width: min(98vw, calc((100vh - 190px) * 1.7778)); }
+    #hud {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: center;
+    }
+    #p1 { grid-column: 1; grid-row: 1; }
+    #p2 { grid-column: 2; grid-row: 1; }
+    .player-panel { width: auto; min-width: 0; min-height: 42px; padding: 5px 7px; }
+    .avatar { width: 34px; height: 34px; flex-basis: 34px; font-size: 12px; }
+    .mini-ball { width: 12px; height: 12px; flex-basis: 12px; }
+    .mini-ball::after { inset: 3px 2px; font-size: 5px; }
+    .ball-strip { gap: 2px; }
+    #msg { grid-column: 1 / -1; grid-row: 2; font-size: 12px; padding: 0 6px; min-height: 18px; }
+    #tip { width: 94vw; text-align: center; }
+    #skillDock {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+    }
+    .skill-button { width: auto; min-height: 38px; grid-template-columns: 18px 1fr; padding: 5px 7px; }
+    .skill-icon { font-size: 17px; }
+    .skill-note { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="screen visible" id="startScreen">
+  <div class="start-wrap">
+    <div class="eyebrow">8 BALL POOL</div>
+    <h1>彩8桌球</h1>
+    <p class="start-copy">选择模式，投骰子决定谁先开球</p>
+    <button class="mode-card" id="modeEight" type="button">
+      <span class="mode-balls">
+        <span class="mode-ball eight">8</span>
+        <span class="mode-ball stripe">12</span>
+      </span>
+      <span>
+        <span class="mode-title">彩8模式</span>
+        <span class="mode-desc">玩家对阵电脑 AI · 全色 / 花色按首次合法进球决定</span>
+      </span>
+      <span class="mode-enter" aria-hidden="true">›</span>
+    </button>
+    <div class="start-note">先清完本方球，再合法打进 8 号球获胜</div>
+  </div>
+</div>
+
+<div class="screen" id="diceScreen">
+  <div class="dice-wrap">
+    <h2>投骰子决定先手</h2>
+    <p class="dice-subtitle">点数更高的一方先开球，平局自动重投</p>
+    <div class="dice-board">
+      <div class="dice-player">
+        <span>你</span>
+        <div class="dice" id="yourDie"></div>
+      </div>
+      <div class="dice-vs">VS</div>
+      <div class="dice-player">
+        <span>电脑 AI</span>
+        <div class="dice" id="aiDie"></div>
+      </div>
+    </div>
+    <div class="dice-result" id="diceResult">准备投掷…</div>
+  </div>
+</div>
+
+<div id="hud">
+  <div class="player-panel" id="p1">
+    <div class="avatar"><span>你</span><span class="group-badge" id="g1"></span></div>
+    <div class="player-info">
+      <span class="player-name" id="n1">你</span>
+      <div class="ball-strip" id="b1"></div>
+    </div>
+  </div>
+  <div id="msg">等待开始</div>
+  <div class="player-panel" id="p2">
+    <div class="avatar"><span>AI</span><span class="group-badge" id="g2"></span></div>
+    <div class="player-info">
+      <span class="player-name" id="n2">电脑 AI</span>
+      <div class="ball-strip" id="b2"></div>
+    </div>
+  </div>
+</div>
+
+<div id="skillDock" class="hidden">
+  <button class="skill-button" id="skillJump" type="button">
+    <span class="skill-icon">↥</span>
+    <span class="skill-name">跳球</span>
+    <span class="skill-note">越过全部阻挡</span>
+  </button>
+  <button class="skill-button" id="skillCurve" type="button">
+    <span class="skill-icon">↝</span>
+    <span class="skill-name">弧球</span>
+    <span class="skill-note">自动转弯</span>
+  </button>
+</div>
+<canvas id="game"></canvas>
+<div id="tip">移动鼠标瞄准 · 按住左键朝拉杆方向移动 · 移动越远力度越大 · 松开击球</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ==================== 基础常量 ==================== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 960, H = 540;
+canvas.width = W; canvas.height = H;
+
+const R = 11;                      // 球半径
+const TL = 40, TT = 70, TR = 920, TB = 470;   // 台面内沿
+const TW = TR - TL, TH = TB - TT;
+const POCKET_R = 22;
+const CORNER_POCKET_R = 23;
+const MAX_SPEED = 1700;
+const PHYSICS_STEP = 1 / 240;
+const MAX_FRAME_DT = 1 / 20;
+const MAX_PHYSICS_STEPS = 12;
+const BALL_RESTITUTION = 0.965;
+const CUSHION_RESTITUTION = 0.79;
+const ROLL_DECEL = 48;
+const LINEAR_DRAG = 0.17;
+const STOP_SPEED = 3.5;
+const MAX_PULL_DISTANCE = 180;
+const MIN_SHOT_POWER = 0.04;
+const CURVE_CURVATURE = 0.00165;
+const CURVE_MAX_DISTANCE = 1050;
+const CURVE_PATH_STEP = 4;
+
+const POCKETS = [
+  { x: TL, y: TT, r: CORNER_POCKET_R }, { x: (TL + TR) / 2, y: TT, r: POCKET_R }, { x: TR, y: TT, r: CORNER_POCKET_R },
+  { x: TL, y: TB, r: CORNER_POCKET_R }, { x: (TL + TR) / 2, y: TB, r: POCKET_R }, { x: TR, y: TB, r: CORNER_POCKET_R }
+];
+
+const COLORS = {
+  1:'#f5c518', 2:'#1a54c8', 3:'#d62828', 4:'#7b2ff7', 5:'#f77f00',
+  6:'#1b8a4b', 7:'#8b2020', 8:'#161616',
+  9:'#f5c518', 10:'#1a54c8', 11:'#d62828', 12:'#7b2ff7', 13:'#f77f00',
+  14:'#1b8a4b', 15:'#8b2020'
+};
+
+/* ==================== 工具 ==================== */
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const len = (x, y) => Math.hypot(x, y);
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+function ballType(num) {
+  if (num === 0) return 'cue';
+  if (num === 8) return 'eight';
+  return num < 8 ? 'solid' : 'stripe';
+}
+
+/* ==================== 游戏状态 ==================== */
+let balls = [];
+let cueBall = null;
+let state = {};
+let shot = null;
+let effects = [];
+let aiTimers = [];
+let matchState = 'menu';
+let skills = { active: null, curveSide: 1 };
+
+let mouse = { x: W / 2, y: H / 2 };
+let aimAngle = 0;
+let draggingCue = false;
+let dragStart = { x: 0, y: 0 };
+let power = 0;
+let physicsAccumulator = 0;
+
+/* ==================== 创建球 ==================== */
+function makeBall(num, x, y) {
+  const type = ballType(num);
+  return {
+    num, x, y, vx: 0, vy: 0, type,
+    color: COLORS[num] || '#ffffff',
+    pocketed: false,
+    curveSide: 0,
+    curveDistance: 0,
+    angle: 0,
+    spin: 0
+  };
+}
+
+function newGame(startingPlayer = 0) {
+  clearAITimers();
+  balls = [];
+  effects = [];
+  const apexX = TL + TW * 0.75;
+  const apexY = (TT + TB) / 2;
+  const dx = R * Math.sqrt(3);
+  const dy = 2 * R;
+
+  cueBall = makeBall(0, TL + TW * 0.25, apexY);
+  balls.push(cueBall);
+
+  // 标准三角摆球：1 号顶点，8 号中央
+  const rack = [
+    [1],
+    [9, 2],
+    [10, 8, 3],
+    [11, 4, 12, 5],
+    [13, 6, 14, 7, 15]
+  ];
+
+  for (let row = 0; row < rack.length; row++) {
+    for (let i = 0; i < rack[row].length; i++) {
+      const x = apexX + row * dx;
+      const y = apexY + (i - row / 2) * dy;
+      balls.push(makeBall(rack[row][i], x, y));
+    }
+  }
+
+  state = {
+    phase: 'aim',          // aim | moving | ballinhand | over
+    player: startingPlayer,
+    groups: [null, null],  // 'solid' | 'stripe'
+    open: true,
+    breakPending: true,
+    msg: `${startingPlayer === 0 ? '你' : '电脑 AI'} 准备开球`,
+    winner: null,
+    aiThinking: false,
+    combo: [0, 0]
+  };
+  skills = { active: null, curveSide: 1 };
+  cueBall.jumpAnimation = null;
+  shot = null;
+  draggingCue = false;
+  dragStart = { x: 0, y: 0 };
+  power = 0;
+  aimAngle = 0;
+  physicsAccumulator = 0;
+  canvas.classList.remove('dragging');
+  updateHUD();
+}
+
+/* ==================== 物理 ==================== */
+function applyRollingFriction(b, dt) {
+  const speed = len(b.vx, b.vy);
+  if (speed <= STOP_SPEED) {
+    b.vx = 0;
+    b.vy = 0;
+    return;
+  }
+
+  const deceleration = ROLL_DECEL + speed * LINEAR_DRAG;
+  const nextSpeed = Math.max(0, speed - deceleration * dt);
+  const scale = nextSpeed / speed;
+  b.vx *= scale;
+  b.vy *= scale;
+}
+
+function markRailContact() {
+  if (shot && shot.firstHit !== null) shot.railAfterContact = true;
+}
+
+function resolveCushion(b) {
+  if (b.x - R < TL) {
+    b.x = TL + R;
+    b.vx = Math.abs(b.vx) * CUSHION_RESTITUTION;
+    markRailContact();
+  }
+  if (b.x + R > TR) {
+    b.x = TR - R;
+    b.vx = -Math.abs(b.vx) * CUSHION_RESTITUTION;
+    markRailContact();
+  }
+  if (b.y - R < TT) {
+    b.y = TT + R;
+    b.vy = Math.abs(b.vy) * CUSHION_RESTITUTION;
+    markRailContact();
+  }
+  if (b.y + R > TB) {
+    b.y = TB - R;
+    b.vy = -Math.abs(b.vy) * CUSHION_RESTITUTION;
+    markRailContact();
+  }
+}
+
+function capturePocket(b) {
+  if (b.pocketed) return;
+
+  for (const p of POCKETS) {
+    if (Math.hypot(b.x - p.x, b.y - p.y) >= p.r) continue;
+
+    b.pocketed = true;
+    b.vx = 0;
+    b.vy = 0;
+    b.spin = 0;
+
+    if (shot) {
+      if (b === cueBall) shot.cuePocketed = true;
+      else if (!shot.pocketed.includes(b.num)) shot.pocketed.push(b.num);
+    }
+    if (b !== cueBall) registerPocketCombo(b);
+    spawnPocketEffect(b, p);
+    updateHUD();
+    return;
+  }
+}
+
+function resolveBallCollisions() {
+  // 两轮修正可以稳定处理开球堆叠和多球同时接触。
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < balls.length; i++) {
+      const a = balls[i];
+      if (a.pocketed) continue;
+
+      for (let j = i + 1; j < balls.length; j++) {
+        const b = balls[j];
+        if (b.pocketed) continue;
+        if (shot && shot.jumpBalls && shot.jumpBalls.length > 0 && (
+          (a === cueBall && shot.jumpBalls.includes(b)) ||
+          (b === cueBall && shot.jumpBalls.includes(a))
+        )) continue;
+
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let distance = Math.hypot(dx, dy);
+
+        if (distance >= 2 * R) continue;
+        if (distance < 1e-6) {
+          dx = 0.01;
+          dy = 0;
+          distance = 0.01;
+        }
+
+        const nx = dx / distance;
+        const ny = dy / distance;
+        const overlap = 2 * R - distance;
+        const correction = overlap * 0.505;
+
+        a.x -= nx * correction;
+        a.y -= ny * correction;
+        b.x += nx * correction;
+        b.y += ny * correction;
+
+        const relativeVx = b.vx - a.vx;
+        const relativeVy = b.vy - a.vy;
+        const normalSpeed = relativeVx * nx + relativeVy * ny;
+
+        if (normalSpeed < 0) {
+          const impulse = -(1 + BALL_RESTITUTION) * normalSpeed / 2;
+          a.vx -= impulse * nx;
+          a.vy -= impulse * ny;
+          b.vx += impulse * nx;
+          b.vy += impulse * ny;
+        }
+
+        if (shot && shot.firstHit === null) {
+          if (a === cueBall) shot.firstHit = b.num;
+          else if (b === cueBall) shot.firstHit = a.num;
+        }
+      }
+    }
+  }
+}
+
+function applyCurveToBall(ball, dt) {
+  if (ball.curveSide === 0 || ball.curveDistance <= 0) return;
+  const speed = len(ball.vx, ball.vy);
+  if (speed < 1) return;
+
+  const travel = speed * dt;
+  const angle = ball.curveSide * CURVE_CURVATURE * travel;
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  const vx = ball.vx;
+  const vy = ball.vy;
+  ball.vx = vx * cosine - vy * sine;
+  ball.vy = vx * sine + vy * cosine;
+  ball.curveDistance = Math.max(0, ball.curveDistance - travel);
+}
+
+function updateBallRotation(ball, dt) {
+  const speed = len(ball.vx, ball.vy);
+  if (speed <= STOP_SPEED) {
+    ball.spin *= Math.pow(0.82, dt * 60);
+    if (Math.abs(ball.spin) < 0.03) ball.spin = 0;
+  } else {
+    const direction = Math.sign(ball.vx * 0.78 + ball.vy * 0.42) || 1;
+    const targetSpin = direction * speed / R * 0.16;
+    ball.spin += (targetSpin - ball.spin) * Math.min(1, dt * 18);
+  }
+  ball.angle = (ball.angle + ball.spin * dt) % (Math.PI * 2);
+}
+
+function physicsStep(dt) {
+  for (const b of balls) {
+    if (b.pocketed) continue;
+    applyCurveToBall(b, dt);
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    applyRollingFriction(b, dt);
+    updateBallRotation(b, dt);
+  }
+
+  for (const b of balls) {
+    if (!b.pocketed) capturePocket(b);
+  }
+
+  for (const b of balls) {
+    if (!b.pocketed) resolveCushion(b);
+  }
+
+  resolveBallCollisions();
+
+  for (const b of balls) {
+    if (!b.pocketed) capturePocket(b);
+  }
+}
+
+function allStopped() {
+  for (const b of balls) {
+    if (b.pocketed) continue;
+    if (b.vx !== 0 || b.vy !== 0) return false;
+  }
+  return true;
+}
+
+/* ==================== 出杆 ==================== */
+function doShoot(pw) {
+  const speed = 240 + pw * (MAX_SPEED - 240);
+  const dx = Math.cos(aimAngle), dy = Math.sin(aimAngle);
+  const jumpPlan = skills.active === 'jump'
+    ? findJumpTarget({ x: dx, y: dy })
+    : { target: null, skipped: [] };
+  const jumpBall = jumpPlan.target;
+  const jumpBalls = jumpPlan.skipped;
+  const curveSide = skills.active === 'curve' ? skills.curveSide : 0;
+
+  state.aiThinking = false;
+  cueBall.vx = dx * speed;
+  cueBall.vy = dy * speed;
+  cueBall.curveSide = curveSide;
+  cueBall.curveDistance = curveSide ? CURVE_MAX_DISTANCE : 0;
+  cueBall.jumpAnimation = null;
+
+  if (jumpBall) {
+    const jumpHit = raycast(cueBall, { x: dx, y: dy }, [cueBall, ...jumpBalls]);
+    const targetDistance = (jumpBall.x - cueBall.x) * dx + (jumpBall.y - cueBall.y) * dy;
+    const contactDistance = Math.max(R, jumpHit.ball === jumpBall ? jumpHit.t : targetDistance - 2 * R);
+    cueBall.jumpAnimation = {
+      startX: cueBall.x,
+      startY: cueBall.y,
+      endX: cueBall.x + dx * contactDistance,
+      endY: cueBall.y + dy * contactDistance,
+      height: Math.min(62, 26 + jumpBalls.length * 10)
+    };
+  }
+
+  const g = state.groups[state.player];
+  shot = {
+    firstHit: null,
+    pocketed: [],
+    cuePocketed: false,
+    railAfterContact: false,
+    isBreak: state.breakPending,
+    comboGroup: null,
+    jumpBall,
+    jumpBalls,
+    groupClearedAtShotStart: g ? groupCleared(g) : false
+  };
+
+  skills.active = null;
+  updateSkillUI();
+  state.phase = 'moving';
+  state.msg = `${playerLabel(state.player)}${state.breakPending ? '开球中…' : '击球中…'}`;
+  updateHUD();
+}
+
+function groupCleared(type) {
+  return balls.filter(b => b.type === type).every(b => b.pocketed);
+}
+
+function groupLabel(type) {
+  return type === 'solid' ? '全色' : '花色';
+}
+
+function playerLabel(index) {
+  const group = state.groups[index];
+  const name = index === 0 ? '你' : '电脑 AI';
+  return group ? `${name}（${groupLabel(group)}）` : name;
+}
+
+function spotEight() {
+  const eight = balls.find(b => b.num === 8);
+  if (!eight) return;
+
+  eight.pocketed = false;
+  eight.vx = 0;
+  eight.vy = 0;
+
+  const footX = TL + TW * 0.75;
+  const footY = (TT + TB) / 2;
+  const candidates = [{ x: footX, y: footY }];
+
+  for (let offset = R * 2.3; offset < TW * 0.58; offset += R * 2.3) {
+    candidates.push({ x: footX - offset, y: footY });
+    candidates.push({ x: footX + offset, y: footY });
+  }
+
+  const free = candidates.find(candidate =>
+    balls.every(b =>
+      b === eight ||
+      b.pocketed ||
+      Math.hypot(b.x - candidate.x, b.y - candidate.y) >= 2 * R + 1
+    )
+  ) || { x: footX, y: footY };
+
+  eight.x = clamp(free.x, TL + R, TR - R);
+  eight.y = clamp(free.y, TT + R, TB - R);
+}
+
+/* ==================== 进球特效 ==================== */
+function registerPocketCombo(ball) {
+  if (!shot || ball.num === 8) return;
+
+  const player = state.player;
+  let targetGroup = state.groups[player];
+  if (state.open) {
+    if (!shot.comboGroup) shot.comboGroup = ball.type;
+    targetGroup = shot.comboGroup;
+  }
+  if (ball.type !== targetGroup) return;
+
+  state.combo[player] = (state.combo[player] || 0) + 1;
+  if (state.combo[player] >= 2) spawnComboEffect(state.combo[player], player);
+}
+
+function spawnComboEffect(count, player) {
+  effects = effects.filter(effect => effect.type !== 'combo');
+  effects.push({
+    type: 'combo',
+    x: W / 2,
+    y: H * 0.27,
+    text: `${count}连击`,
+    label: player === 0 ? '你' : '电脑 AI',
+    color: player === 0 ? '#62e6a5' : '#ffc75a',
+    life: 1.2,
+    maxLife: 1.2
+  });
+}
+
+function spawnPocketEffect(ball, pocket) {
+  const color = ball.num === 0 ? '#f5f2df' : (COLORS[ball.num] || '#ffffff');
+  effects.push({
+    type: 'ring', x: pocket.x, y: pocket.y,
+    radius: POCKET_R * 0.45, maxRadius: POCKET_R * 2.25,
+    life: 0.62, maxLife: 0.62, color
+  });
+
+  for (let i = 0; i < 14; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 75 + Math.random() * 170;
+    effects.push({
+      type: 'particle', x: pocket.x, y: pocket.y,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      size: 1.8 + Math.random() * 3.4,
+      life: 0.45 + Math.random() * 0.35,
+      maxLife: 0.8, color
+    });
+  }
+
+  effects.push({
+    type: 'label', x: pocket.x, y: pocket.y - 22,
+    text: ball.num === 0 ? '母球落袋' : `进袋 ${ball.num}`,
+    life: 0.9, maxLife: 0.9, color
+  });
+}
+
+function updateEffects(dt) {
+  for (const effect of effects) {
+    effect.life -= dt;
+    if (effect.type === 'particle') {
+      effect.x += effect.vx * dt;
+      effect.y += effect.vy * dt;
+      effect.vx *= 0.96;
+      effect.vy *= 0.96;
+    }
+    if (effect.type === 'label') effect.y -= 22 * dt;
+  }
+  effects = effects.filter(effect => effect.life > 0);
+}
+
+/* ==================== AI ==================== */
+function clearAITimers() {
+  for (const timer of aiTimers) clearTimeout(timer);
+  aiTimers = [];
+}
+
+function queueAITimer(callback, delay) {
+  const timer = setTimeout(() => {
+    aiTimers = aiTimers.filter(item => item !== timer);
+    callback();
+  }, delay);
+  aiTimers.push(timer);
+  return timer;
+}
+
+function activeObjectBalls() {
+  return balls.filter(ball => ball.num !== 0 && !ball.pocketed);
+}
+
+function aiLegalTargets() {
+  const active = activeObjectBalls();
+  if (state.open) return active.filter(ball => ball.num !== 8);
+
+  const group = state.groups[1];
+  if (!group) return active.filter(ball => ball.num !== 8);
+  if (groupCleared(group)) return active.filter(ball => ball.num === 8);
+  return active.filter(ball => ball.type === group);
+}
+
+function pointSegmentDistance(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq < 1e-6) return Math.hypot(px - ax, py - ay);
+  const t = clamp(((px - ax) * dx + (py - ay) * dy) / lengthSq, 0, 1);
+  return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+}
+
+function aiPathBlocked(ax, ay, bx, by, ignored) {
+  for (const ball of balls) {
+    if (ball.pocketed || ignored.includes(ball)) continue;
+    if (pointSegmentDistance(ball.x, ball.y, ax, ay, bx, by) < 2 * R - 2) return true;
+  }
+  return false;
+}
+
+function chooseAIShot() {
+  const targets = aiLegalTargets();
+  if (targets.length === 0) return null;
+
+  if (state.breakPending) {
+    const centerY = (TT + TB) / 2;
+    const target = [...targets].sort((a, b) => a.x - b.x || Math.abs(a.y - centerY) - Math.abs(b.y - centerY))[0];
+    return {
+      angle: Math.atan2(target.y - cueBall.y, target.x - cueBall.x) + (Math.random() - 0.5) * 0.012,
+      power: 0.9 + Math.random() * 0.08,
+      score: 1000
+    };
+  }
+
+  const plans = [];
+  for (const target of targets) {
+    for (const pocket of POCKETS) {
+      const pocketDx = pocket.x - target.x;
+      const pocketDy = pocket.y - target.y;
+      const pocketDistance = Math.hypot(pocketDx, pocketDy);
+      if (pocketDistance < 1) continue;
+
+      const objectX = pocketDx / pocketDistance;
+      const objectY = pocketDy / pocketDistance;
+      const ghostX = target.x - objectX * 2 * R;
+      const ghostY = target.y - objectY * 2 * R;
+      const cueDx = ghostX - cueBall.x;
+      const cueDy = ghostY - cueBall.y;
+      const cueDistance = Math.hypot(cueDx, cueDy);
+      if (cueDistance < 1) continue;
+
+      const cueX = cueDx / cueDistance;
+      const cueY = cueDy / cueDistance;
+      const cut = cueX * objectX + cueY * objectY;
+      if (cut < 0.2) continue;
+      if (aiPathBlocked(cueBall.x, cueBall.y, ghostX, ghostY, [cueBall, target])) continue;
+      if (aiPathBlocked(target.x, target.y, pocket.x, pocket.y, [target])) continue;
+
+      const score = cut * 1250 - cueDistance * 0.58 - pocketDistance * 0.2;
+      plans.push({
+        angle: Math.atan2(cueDy, cueDx),
+        power: clamp(0.42 + cueDistance / 1150 + pocketDistance / 1500, 0.43, 0.92),
+        score
+      });
+    }
+  }
+
+  if (plans.length > 0) {
+    plans.sort((a, b) => b.score - a.score);
+    const pool = plans.slice(0, Math.min(3, plans.length));
+    const chosen = pool[Math.random() < 0.76 ? 0 : Math.floor(Math.random() * pool.length)];
+    chosen.angle += (Math.random() - 0.5) * 0.018;
+    chosen.power = clamp(chosen.power + (Math.random() - 0.5) * 0.08, 0.36, 0.95);
+    return chosen;
+  }
+
+  const fallback = [...targets].sort((a, b) =>
+    Math.hypot(a.x - cueBall.x, a.y - cueBall.y) - Math.hypot(b.x - cueBall.x, b.y - cueBall.y)
+  ).find(target => !aiPathBlocked(cueBall.x, cueBall.y, target.x, target.y, [cueBall, target])) || targets[0];
+
+  const distance = Math.hypot(fallback.x - cueBall.x, fallback.y - cueBall.y);
+  return {
+    angle: Math.atan2(fallback.y - cueBall.y, fallback.x - cueBall.x) + (Math.random() - 0.5) * 0.035,
+    power: clamp(0.38 + distance / 1600, 0.4, 0.68),
+    score: -distance
+  };
+}
+
+function scheduleAITurn() {
+  if (matchState !== 'playing' || state.player !== 1 || state.phase !== 'aim' || state.winner !== null) return;
+  clearAITimers();
+  state.aiThinking = true;
+  state.msg = '电脑 AI 思考中…';
+  updateHUD();
+
+  queueAITimer(() => {
+    if (matchState !== 'playing' || state.player !== 1 || state.phase !== 'aim' || state.winner !== null) return;
+    const plan = chooseAIShot();
+    if (!plan) return;
+    aimAngle = plan.angle;
+    state.aiThinking = false;
+    state.msg = '电脑 AI 准备出杆';
+    updateHUD();
+
+    queueAITimer(() => {
+      if (matchState !== 'playing' || state.player !== 1 || state.phase !== 'aim' || state.winner !== null) return;
+      doShoot(plan.power);
+    }, 420 + Math.random() * 260);
+  }, 620 + Math.random() * 360);
+}
+
+function scheduleAIBallInHand() {
+  if (matchState !== 'playing' || state.player !== 1 || state.phase !== 'ballinhand' || state.winner !== null) return;
+  clearAITimers();
+  state.aiThinking = true;
+  state.msg = '电脑 AI 正在选择自由球位置…';
+  updateHUD();
+
+  queueAITimer(() => {
+    if (matchState !== 'playing' || state.player !== 1 || state.phase !== 'ballinhand' || state.winner !== null) return;
+
+    const original = { x: cueBall.x, y: cueBall.y };
+    let best = null;
+
+    for (let x = TL + 80; x <= TR - 80; x += 80) {
+      for (let y = TT + 55; y <= TB - 55; y += 70) {
+        if (!canPlaceCue(x, y)) continue;
+        cueBall.x = x;
+        cueBall.y = y;
+        const plan = chooseAIShot();
+        const distanceBias = -Math.hypot(x - W / 2, y - H / 2) * 0.05;
+        const score = (plan ? plan.score : -1000) + distanceBias + Math.random() * 35;
+        if (!best || score > best.score) best = { x, y, score };
+      }
+    }
+
+    if (best) {
+      cueBall.x = best.x;
+      cueBall.y = best.y;
+      cueBall.vx = cueBall.vy = 0;
+      cueBall.pocketed = false;
+    } else {
+      cueBall.x = original.x;
+      cueBall.y = original.y;
+    }
+
+    state.aiThinking = false;
+    state.phase = 'aim';
+    state.msg = '电脑 AI 准备出杆';
+    updateHUD();
+    scheduleAITurn();
+  }, 620);
+}
+
+/* ==================== 回合结算 ==================== */
+function endShot() {
+  const me = state.player;
+  const s = shot;
+  if (!s) return;
+
+  const breakEightSpotted = s.isBreak && s.pocketed.includes(8);
+  if (breakEightSpotted) {
+    spotEight();
+    s.pocketed = s.pocketed.filter(n => n !== 8);
+  }
+
+  const myGroup = state.groups[me];
+  let foul = false, reason = '';
+
+  if (s.cuePocketed) { foul = true; reason = '母球落袋'; }
+  else if (s.firstHit === null) { foul = true; reason = '空杆，未碰到任何球'; }
+  else {
+    const fh = s.firstHit;
+    if (state.open) {
+      if (fh === 8) { foul = true; reason = '不能先碰 8 号球'; }
+    } else if (s.groupClearedAtShotStart) {
+      if (fh !== 8) { foul = true; reason = '本方球已清台，须先碰 8 号球'; }
+    } else {
+      if (ballType(fh) !== myGroup) { foul = true; reason = '先碰到了非本方球'; }
+    }
+  }
+
+  if (!foul && s.pocketed.length === 0 && !s.railAfterContact && !breakEightSpotted) {
+    foul = true;
+    reason = '击球后无球落袋，也没有球碰库';
+  }
+
+  // 非开球的 8 号球落袋，按是否完成本方球组和合法首碰判胜负。
+  if (s.pocketed.includes(8)) {
+    const legal = myGroup && s.groupClearedAtShotStart && s.firstHit === 8 && !foul;
+    gameOver(legal ? me : 1 - me);
+    return;
+  }
+
+  // 开局第一颗合法进球立即决定球组，包括开球本身。
+  if (state.open && !foul && s.pocketed.length > 0) {
+    const first = s.pocketed.find(n => n !== 8);
+    if (first !== undefined) {
+      const g = ballType(first);
+      state.groups[me] = g;
+      state.groups[1 - me] = (g === 'solid') ? 'stripe' : 'solid';
+      state.open = false;
+    }
+  }
+
+  if (s.isBreak) state.breakPending = false;
+
+  // 是否继续出杆
+  let cont = false;
+  if (!foul) {
+    const need = state.groups[me];
+    if (need) cont = s.pocketed.some(n => ballType(n) === need);
+    else cont = s.pocketed.some(n => n !== 8);
+  }
+
+  if (foul || !cont) state.combo[me] = 0;
+
+  if (foul) {
+    state.player = 1 - me;
+    state.phase = 'ballinhand';
+    cueBall.pocketed = false;
+    cueBall.vx = cueBall.vy = 0;
+    state.msg = `犯规：${reason}；${playerLabel(1 - me)} 自由球`;
+  } else if (!cont) {
+    state.player = 1 - me;
+    state.phase = 'aim';
+    state.msg = `${playerLabel(state.player)} 出杆${breakEightSpotted ? '（开球 8 号已回摆）' : ''}`;
+  } else {
+    state.phase = 'aim';
+    state.msg = `${playerLabel(me)} 继续出杆${breakEightSpotted ? '（开球 8 号已回摆）' : ''}`;
+  }
+
+  cueBall.jumpAnimation = null;
+  shot = null;
+  updateHUD();
+
+  if (matchState === 'playing') {
+    if (state.phase === 'ballinhand' && state.player === 1) scheduleAIBallInHand();
+    if (state.phase === 'aim' && state.player === 1) scheduleAITurn();
+  }
+}
+
+function gameOver(winner) {
+  clearAITimers();
+  state.phase = 'over';
+  state.winner = winner;
+  state.aiThinking = false;
+  state.msg = `🏆 ${winner === 0 ? '你' : '电脑 AI'} 获胜！点击画面返回开始界面`;
+  cueBall.jumpAnimation = null;
+  shot = null;
+  updateHUD();
+}
+
+/* ==================== 开始界面与先手骰子 ==================== */
+let diceSequence = 0;
+
+const DICE_PIPS = {
+  1: [5],
+  2: [1, 9],
+  3: [1, 5, 9],
+  4: [1, 3, 7, 9],
+  5: [1, 3, 5, 7, 9],
+  6: [1, 3, 4, 6, 7, 9]
+};
+
+function drawDie(element, value, rolling = false) {
+  element.classList.toggle('rolling', rolling);
+  element.setAttribute('aria-label', `${value} 点`);
+  element.innerHTML = '';
+  for (let index = 1; index <= 9; index++) {
+    const pip = document.createElement('span');
+    pip.className = `pip${DICE_PIPS[value].includes(index) ? ' show' : ''}`;
+    element.appendChild(pip);
+  }
+}
+
+function showStartScreen() {
+  diceSequence++;
+  clearAITimers();
+  matchState = 'menu';
+  newGame(0);
+  state.msg = '等待开始';
+  updateHUD();
+  elDiceScreen.classList.remove('visible');
+  elStartScreen.classList.add('visible');
+  elModeEight.disabled = false;
+}
+
+function beginDiceRoll() {
+  if (matchState !== 'menu') return;
+  matchState = 'rolling';
+  clearAITimers();
+  newGame(0);
+  elModeEight.disabled = true;
+  elStartScreen.classList.remove('visible');
+  elDiceScreen.classList.add('visible');
+  rollDiceRound();
+}
+
+function rollDiceRound() {
+  const sequence = ++diceSequence;
+  let playerValue = 1;
+  let aiValue = 1;
+  elDiceResult.textContent = '骰子投掷中…';
+
+  const shuffleTimer = setInterval(() => {
+    if (sequence !== diceSequence) return;
+    playerValue = 1 + Math.floor(Math.random() * 6);
+    aiValue = 1 + Math.floor(Math.random() * 6);
+    drawDie(elYourDie, playerValue, true);
+    drawDie(elAiDie, aiValue, true);
+  }, 65);
+
+  setTimeout(() => {
+    clearInterval(shuffleTimer);
+    if (sequence !== diceSequence) return;
+
+    playerValue = 1 + Math.floor(Math.random() * 6);
+    aiValue = 1 + Math.floor(Math.random() * 6);
+    drawDie(elYourDie, playerValue);
+    drawDie(elAiDie, aiValue);
+
+    if (playerValue === aiValue) {
+      elDiceResult.innerHTML = `平局：${playerValue} : ${aiValue}，重新投掷…`;
+      setTimeout(() => {
+        if (sequence === diceSequence) rollDiceRound();
+      }, 850);
+      return;
+    }
+
+    const winner = playerValue > aiValue ? 0 : 1;
+    elDiceResult.innerHTML = `${playerValue} : ${aiValue} · <strong>${winner === 0 ? '你' : '电脑 AI'}</strong> 先开球`;
+    setTimeout(() => {
+      if (sequence === diceSequence) startMatch(winner);
+    }, 1050);
+  }, 900);
+}
+
+function startMatch(firstPlayer) {
+  clearAITimers();
+  matchState = 'playing';
+  state.player = firstPlayer;
+  state.phase = 'aim';
+  state.breakPending = true;
+  state.winner = null;
+  state.msg = `${playerLabel(firstPlayer)} 开球`;
+  elDiceScreen.classList.remove('visible');
+  updateHUD();
+
+  if (firstPlayer === 1) scheduleAITurn();
+}
+
+function canUseSkills() {
+  return matchState === 'playing' &&
+    state.player === 0 &&
+    state.phase === 'aim' &&
+    !state.aiThinking &&
+    state.winner === null;
+}
+
+function updateSkillUI() {
+  const enabled = canUseSkills();
+  elSkillDock.classList.toggle('hidden', !enabled);
+  elSkillJump.disabled = !enabled;
+  elSkillCurve.disabled = !enabled;
+  elSkillJump.classList.toggle('active', enabled && skills.active === 'jump');
+  elSkillCurve.classList.toggle('active', enabled && skills.active === 'curve');
+}
+
+function toggleSkill(type) {
+  if (!canUseSkills()) return;
+  cancelShotDrag();
+  skills.active = skills.active === type ? null : type;
+
+  if (skills.active === 'curve') {
+    const dir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
+    skills.curveSide = chooseCurveSide(cueBall, dir);
+    state.msg = '弧球已启用：虚线显示转弯路径';
+  } else if (skills.active === 'jump') {
+    state.msg = '跳球已启用：跳过全部阻挡，直达对应球';
+  } else {
+    state.msg = '技能已取消';
+  }
+
+  updateHUD();
+}
+
+/* ==================== 头像球组图标 ==================== */
+function renderBallStrip(index, element) {
+  element.innerHTML = '';
+  const group = state.groups[index];
+  if (!group) return;
+
+  const remaining = balls
+    .filter(ball => ball.type === group && !ball.pocketed)
+    .sort((a, b) => a.num - b.num);
+
+  for (const ball of remaining) {
+    const icon = document.createElement('span');
+    icon.className = 'mini-ball';
+    icon.dataset.num = String(ball.num);
+    icon.title = `${ball.num} 号球`;
+    icon.style.background = group === 'stripe'
+      ? `linear-gradient(180deg, #f7f5ee 0 27%, ${ball.color} 27% 73%, #f7f5ee 73%)`
+      : ball.color;
+    element.appendChild(icon);
+  }
+}
+
+/* ==================== 瞄准预测（延长线） ==================== */
+function raycast(origin, dir, ignore) {
+  let bestT = Infinity, bestBall = null;
+
+  for (const b of balls) {
+    if (b.pocketed || b === ignore || (Array.isArray(ignore) && ignore.includes(b))) continue;
+    const ox = origin.x - b.x, oy = origin.y - b.y;
+    const rr = 2 * R;
+    const bq = ox * dir.x + oy * dir.y;
+    const c = ox * ox + oy * oy - rr * rr;
+    const disc = bq * bq - c;
+    if (disc < 0) continue;
+    const sq = Math.sqrt(disc);
+    let t = -bq - sq;
+    if (t < 0) t = -bq + sq;
+    if (t < 1e-6) continue;
+    if (t < bestT) { bestT = t; bestBall = b; }
+  }
+
+  let tw = Infinity;
+  if (dir.x > 1e-9) tw = Math.min(tw, (TR - R - origin.x) / dir.x);
+  if (dir.x < -1e-9) tw = Math.min(tw, (TL + R - origin.x) / dir.x);
+  if (dir.y > 1e-9) tw = Math.min(tw, (TB - R - origin.y) / dir.y);
+  if (dir.y < -1e-9) tw = Math.min(tw, (TT + R - origin.y) / dir.y);
+  if (tw < 0) tw = 0;
+
+  if (tw < bestT) return { t: tw, ball: null };
+  return { t: bestT, ball: bestBall };
+}
+
+function firstCircleHit(origin, dir, centerX, centerY, radius) {
+  const ox = origin.x - centerX;
+  const oy = origin.y - centerY;
+  const b = ox * dir.x + oy * dir.y;
+  const c = ox * ox + oy * oy - radius * radius;
+  const discriminant = b * b - c;
+  if (discriminant < 0) return Infinity;
+  const root = Math.sqrt(discriminant);
+  const near = -b - root;
+  if (near > 1e-6) return near;
+  const far = -b + root;
+  return far > 1e-6 ? far : Infinity;
+}
+
+function wallHitDistance(origin, dir) {
+  let distance = Infinity;
+  if (dir.x > 1e-9) distance = Math.min(distance, (TR - R - origin.x) / dir.x);
+  if (dir.x < -1e-9) distance = Math.min(distance, (TL + R - origin.x) / dir.x);
+  if (dir.y > 1e-9) distance = Math.min(distance, (TB - R - origin.y) / dir.y);
+  if (dir.y < -1e-9) distance = Math.min(distance, (TT + R - origin.y) / dir.y);
+  return Math.max(0, distance);
+}
+
+function traceBallPath(origin, dir, ignored, maxBounces = 2) {
+  const points = [{ x: origin.x, y: origin.y }];
+  let current = { x: origin.x, y: origin.y };
+  let velocity = { x: dir.x, y: dir.y };
+
+  for (let bounce = 0; bounce <= maxBounces; bounce++) {
+    const ballHit = raycast(current, velocity, ignored);
+    const wallDistance = wallHitDistance(current, velocity);
+
+    let pocketHit = null;
+    let pocketDistance = Infinity;
+    for (const pocket of POCKETS) {
+      const distance = firstCircleHit(current, velocity, pocket.x, pocket.y, pocket.r);
+      if (distance < pocketDistance) {
+        pocketDistance = distance;
+        pocketHit = pocket;
+      }
+    }
+
+    if (ballHit.ball && ballHit.t <= pocketDistance && ballHit.t <= wallDistance + 1e-6) {
+      points.push({
+        x: current.x + velocity.x * ballHit.t,
+        y: current.y + velocity.y * ballHit.t
+      });
+      return { points, ball: ballHit.ball, pocket: null };
+    }
+
+    if (pocketHit && pocketDistance < wallDistance) {
+      points.push({
+        x: current.x + velocity.x * (pocketDistance + pocketHit.r * 0.35),
+        y: current.y + velocity.y * (pocketDistance + pocketHit.r * 0.35)
+      });
+      return { points, ball: null, pocket: pocketHit };
+    }
+
+    if (!Number.isFinite(wallDistance) || wallDistance > 5000) {
+      return { points, ball: null, pocket: null };
+    }
+
+    current = {
+      x: current.x + velocity.x * wallDistance,
+      y: current.y + velocity.y * wallDistance
+    };
+    points.push({ x: current.x, y: current.y });
+
+    const hitVertical = current.x <= TL + R + 0.01 || current.x >= TR - R - 0.01;
+    const hitHorizontal = current.y <= TT + R + 0.01 || current.y >= TB - R - 0.01;
+    if (hitVertical) velocity.x *= -1;
+    if (hitHorizontal) velocity.y *= -1;
+  }
+
+  return { points, ball: null, pocket: null };
+}
+
+function traceCurvePath(origin, dir, side, ignored = []) {
+  const points = [{ x: origin.x, y: origin.y }];
+  let current = { x: origin.x, y: origin.y };
+  let velocity = { x: dir.x, y: dir.y };
+  let minimumClearance = Infinity;
+
+  for (let distance = 0; distance < CURVE_MAX_DISTANCE; distance += CURVE_PATH_STEP) {
+    const angle = side * CURVE_CURVATURE * CURVE_PATH_STEP;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    const nextVelocity = {
+      x: velocity.x * cosine - velocity.y * sine,
+      y: velocity.x * sine + velocity.y * cosine
+    };
+    const next = {
+      x: current.x + nextVelocity.x * CURVE_PATH_STEP,
+      y: current.y + nextVelocity.y * CURVE_PATH_STEP
+    };
+
+    for (const ball of balls) {
+      if (ball.pocketed || ball === origin || ignored.includes(ball)) continue;
+      const clearance = Math.hypot(next.x - ball.x, next.y - ball.y) - 2 * R;
+      minimumClearance = Math.min(minimumClearance, clearance);
+      if (clearance <= 0) {
+        points.push({ x: next.x, y: next.y });
+        return {
+          points,
+          ball,
+          pocket: null,
+          clearance: 0,
+          distance: distance + CURVE_PATH_STEP
+        };
+      }
+    }
+
+    for (const pocket of POCKETS) {
+      if (Math.hypot(next.x - pocket.x, next.y - pocket.y) < pocket.r) {
+        points.push({ x: next.x, y: next.y });
+        return {
+          points,
+          ball: null,
+          pocket,
+          clearance: minimumClearance,
+          distance: distance + CURVE_PATH_STEP
+        };
+      }
+    }
+
+    if (next.x - R < TL || next.x + R > TR || next.y - R < TT || next.y + R > TB) {
+      points.push({ x: next.x, y: next.y });
+      return {
+        points,
+        ball: null,
+        pocket: null,
+        clearance: minimumClearance,
+        distance: distance + CURVE_PATH_STEP
+      };
+    }
+
+    current = next;
+    velocity = nextVelocity;
+    points.push(next);
+  }
+
+  return {
+    points,
+    ball: null,
+    pocket: null,
+    clearance: Number.isFinite(minimumClearance) ? minimumClearance : 999,
+    distance: CURVE_MAX_DISTANCE
+  };
+}
+
+function chooseCurveSide(origin, dir) {
+  const left = traceCurvePath(origin, dir, 1, [cueBall]);
+  const right = traceCurvePath(origin, dir, -1, [cueBall]);
+  const score = path => {
+    if (path.pocket) return 2200 + path.distance;
+    if (path.ball) return path.distance * 2 + path.clearance * 4;
+    return 900 + path.distance + Math.min(path.clearance, 80) * 5;
+  };
+  return score(left) >= score(right) ? 1 : -1;
+}
+
+function findJumpTarget(dir) {
+  const candidates = [];
+  let pocketLimit = Infinity;
+  for (const pocket of POCKETS) {
+    pocketLimit = Math.min(
+      pocketLimit,
+      firstCircleHit(cueBall, dir, pocket.x, pocket.y, pocket.r)
+    );
+  }
+
+  for (const ball of balls) {
+    if (ball.pocketed || ball === cueBall) continue;
+    const relX = ball.x - cueBall.x;
+    const relY = ball.y - cueBall.y;
+    const along = relX * dir.x + relY * dir.y;
+    if (along <= 2 * R) continue;
+    if (along - 2 * R >= pocketLimit) continue;
+    const perpendicular = Math.abs(relX * dir.y - relY * dir.x);
+    if (perpendicular > 2 * R * 0.96) continue;
+    candidates.push({ ball, along });
+  }
+
+  if (candidates.length === 0) return { target: null, skipped: [] };
+  candidates.sort((a, b) => b.along - a.along);
+  const target = candidates[0].ball;
+  const skipped = candidates.slice(1).map(item => item.ball);
+  return { target, skipped };
+}
+
+function computeAim() {
+  const dir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
+  let hit;
+  let jumpBall = null;
+  let jumpBalls = [];
+  let mainPath = null;
+
+  if (skills.active === 'curve') {
+    skills.curveSide = chooseCurveSide(cueBall, dir);
+    const curve = traceCurvePath(cueBall, dir, skills.curveSide, [cueBall]);
+    mainPath = curve.points;
+    hit = {
+      t: curve.distance,
+      ball: curve.ball
+    };
+  } else {
+    hit = raycast(cueBall, dir, [cueBall]);
+    if (skills.active === 'jump' && hit.ball) {
+      const jumpPlan = findJumpTarget(dir);
+      if (jumpPlan.target) {
+        jumpBall = jumpPlan.target;
+        jumpBalls = jumpPlan.skipped;
+        hit = raycast(cueBall, dir, [cueBall, ...jumpBalls]);
+      }
+    }
+    mainPath = [
+      { x: cueBall.x, y: cueBall.y },
+      {
+        x: cueBall.x + dir.x * hit.t,
+        y: cueBall.y + dir.y * hit.t
+      }
+    ];
+  }
+
+  const contact = {
+    x: mainPath[mainPath.length - 1].x,
+    y: mainPath[mainPath.length - 1].y
+  };
+  const out = {
+    dir,
+    contact,
+    mainPath,
+    targetBall: hit.ball,
+    targetPath: null,
+    cuePath: null,
+    jumpBall,
+    jumpBalls
+  };
+
+  if (hit.ball) {
+    const target = hit.ball;
+    const normalX = (target.x - contact.x) / (2 * R);
+    const normalY = (target.y - contact.y) / (2 * R);
+    const normalLength = Math.hypot(normalX, normalY) || 1;
+    const objectDir = { x: normalX / normalLength, y: normalY / normalLength };
+    out.targetPath = traceBallPath(target, objectDir, [target], 2);
+
+    const normalSpeed = dir.x * objectDir.x + dir.y * objectDir.y;
+    let cueX = dir.x - normalSpeed * objectDir.x;
+    let cueY = dir.y - normalSpeed * objectDir.y;
+    const cueLength = Math.hypot(cueX, cueY);
+    if (cueLength > 0.02) {
+      cueX /= cueLength;
+      cueY /= cueLength;
+      out.cuePath = traceBallPath(contact, { x: cueX, y: cueY }, [cueBall, target], 2);
+    }
+  } else {
+    if (skills.active === 'curve') {
+      out.cuePath = null;
+    } else if (skills.active === 'jump') {
+      out.cuePath = null;
+    } else {
+      out.cuePath = traceBallPath(cueBall, dir, [cueBall], 3);
+    }
+  }
+
+  return out;
+}
+
+/* ==================== 绘制 ==================== */
+function drawTable() {
+  // 木框
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.65)';
+  ctx.shadowBlur = 34;
+  ctx.shadowOffsetY = 12;
+  const woodGrad = ctx.createLinearGradient(0, TT - 40, 0, TB + 40);
+  woodGrad.addColorStop(0, '#5a3620');
+  woodGrad.addColorStop(0.5, '#3b2416');
+  woodGrad.addColorStop(1, '#2a180d');
+  ctx.fillStyle = woodGrad;
+  roundRect(ctx, TL - 40, TT - 40, TW + 80, TH + 80, 26);
+  ctx.fill();
+  ctx.restore();
+
+  // 台呢
+  const feltGrad = ctx.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, 560);
+  feltGrad.addColorStop(0, '#1d8450');
+  feltGrad.addColorStop(1, '#0d4f30');
+  ctx.fillStyle = feltGrad;
+  ctx.fillRect(TL, TT, TW, TH);
+
+  // 内阴影
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,.35)';
+  ctx.lineWidth = 10;
+  ctx.strokeRect(TL + 5, TT + 5, TW - 10, TH - 10);
+  ctx.restore();
+
+  // 开球线
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,.10)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 8]);
+  ctx.beginPath();
+  ctx.moveTo(TL + TW * 0.25, TT);
+  ctx.lineTo(TL + TW * 0.25, TB);
+  ctx.stroke();
+  ctx.restore();
+
+  // 袋口
+  for (const p of POCKETS) {
+    const radius = p.r || POCKET_R;
+    const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, radius);
+    g.addColorStop(0, '#000000');
+    g.addColorStop(0.7, '#04100a');
+    g.addColorStop(1, '#0b1d13');
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,0,0,.8)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+}
+
+function drawBall(b) {
+  if (b.pocketed) return;
+  const { x, y } = b;
+  const jumpOffset = b.jumpAnimation
+    ? Math.sin(clamp(
+      ((x - b.jumpAnimation.startX) * (b.jumpAnimation.endX - b.jumpAnimation.startX) +
+        (y - b.jumpAnimation.startY) * (b.jumpAnimation.endY - b.jumpAnimation.startY)) /
+      Math.max(1, Math.hypot(
+        b.jumpAnimation.endX - b.jumpAnimation.startX,
+        b.jumpAnimation.endY - b.jumpAnimation.startY
+      ) ** 2),
+      0,
+      1
+    ) * Math.PI) * b.jumpAnimation.height
+    : 0;
+  const drawY = y - jumpOffset;
+
+  // 阴影
+  ctx.beginPath();
+  ctx.ellipse(
+    x + 2.5,
+    y + 3.5,
+    R * (1.02 + jumpOffset / 95),
+    R * (0.9 + jumpOffset / 150),
+    0,
+    0,
+    Math.PI * 2
+  );
+  ctx.fillStyle = 'rgba(0,0,0,.32)';
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, drawY, R, 0, Math.PI * 2);
+  ctx.clip();
+
+  ctx.fillStyle = b.type === 'cue' || b.type === 'stripe' ? '#f8f6ef' : b.color;
+  ctx.fillRect(x - R, drawY - R, 2 * R, 2 * R);
+
+  ctx.translate(x, drawY);
+  ctx.rotate(b.angle || 0);
+
+  if (b.type === 'stripe') {
+    ctx.fillStyle = b.color;
+    ctx.fillRect(-R, -R * 0.60, 2 * R, R * 1.20);
+  } else if (b.type === 'cue') {
+    ctx.fillStyle = 'rgba(216,74,66,.78)';
+    ctx.beginPath();
+    ctx.arc(R * 0.46, -R * 0.10, R * 0.19, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(54,107,186,.62)';
+    ctx.beginPath();
+    ctx.arc(-R * 0.34, R * 0.28, R * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (b.num > 0) {
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.53, 0, Math.PI * 2);
+    ctx.fillStyle = '#fbfbf6';
+    ctx.fill();
+
+    ctx.fillStyle = '#141414';
+    ctx.font = `bold ${Math.round(R * 0.78)}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(b.num), 0, 0.5);
+  }
+
+  ctx.restore();
+
+  // 立体高光保持固定，体现光源方向。
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, drawY, R, 0, Math.PI * 2);
+  ctx.clip();
+  const hg = ctx.createRadialGradient(x - R * 0.38, drawY - R * 0.42, 1, x, drawY, R * 1.35);
+  hg.addColorStop(0, 'rgba(255,255,255,.60)');
+  hg.addColorStop(0.42, 'rgba(255,255,255,0)');
+  hg.addColorStop(1, 'rgba(0,0,0,.42)');
+  ctx.fillStyle = hg;
+  ctx.fillRect(x - R, drawY - R, 2 * R, 2 * R);
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(x, drawY, R, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,0,0,.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawPredictionPath(points, startColor, endColor, width, dash) {
+  if (!points || points.length < 2) return;
+  const start = points[0];
+  const end = points[points.length - 1];
+  const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+  gradient.addColorStop(0, startColor);
+  gradient.addColorStop(1, endColor);
+
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  for (let index = 1; index < points.length; index++) {
+    ctx.lineTo(points[index].x, points[index].y);
+  }
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+function drawAim() {
+  if (state.phase !== 'aim') return;
+
+  const aim = computeAim();
+  const dir = aim.dir;
+  const contact = aim.contact;
+  const mainPoints = aim.mainPath.map(point => ({ x: point.x, y: point.y }));
+  if (mainPoints.length > 1) {
+    const start = mainPoints[0];
+    const next = mainPoints[1];
+    const length = Math.hypot(next.x - start.x, next.y - start.y) || 1;
+    mainPoints[0] = {
+      x: start.x + (next.x - start.x) / length * R,
+      y: start.y + (next.y - start.y) / length * R
+    };
+  }
+
+  ctx.save();
+
+  drawPredictionPath(mainPoints, 'rgba(255,255,255,.98)', 'rgba(255,255,255,.56)', 1.6, [6, 6]);
+
+  for (const ball of aim.jumpBalls || []) {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, R + 7, Math.PI, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,207,80,.48)';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,223,138,.68)';
+    ctx.font = 'bold 10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('跳', ball.x, ball.y - R - 9);
+  }
+
+  if (aim.jumpBall) {
+    ctx.beginPath();
+    ctx.arc(aim.jumpBall.x, aim.jumpBall.y, R + 10, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,207,80,.98)';
+    ctx.lineWidth = 2.6;
+    ctx.setLineDash([5, 3]);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,229,147,.98)';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('目标', aim.jumpBall.x, aim.jumpBall.y - R - 13);
+  }
+
+  ctx.beginPath();
+  ctx.arc(contact.x, contact.y, R, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,.58)';
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash([3, 3]);
+  ctx.stroke();
+
+  if (aim.targetPath) {
+    drawPredictionPath(aim.targetPath.points, 'rgba(255,214,60,.96)', 'rgba(255,214,60,.25)', 1.9, [7, 7]);
+  }
+
+  if (aim.cuePath) {
+    drawPredictionPath(aim.cuePath.points, 'rgba(120,220,255,.82)', 'rgba(120,220,255,.14)', 1.35, [5, 8]);
+  }
+
+  for (const path of [aim.targetPath, aim.cuePath]) {
+    if (!path || path.points.length < 2) continue;
+    const endpoint = path.points[path.points.length - 1];
+    if (path.pocket) {
+      ctx.beginPath();
+      ctx.arc(endpoint.x, endpoint.y, path.pocket.r * 0.55, 0, Math.PI * 2);
+      ctx.strokeStyle = path === aim.targetPath ? 'rgba(255,214,60,.9)' : 'rgba(120,220,255,.8)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    } else if (path.ball) {
+      ctx.beginPath();
+      ctx.arc(endpoint.x, endpoint.y, 2.6, 0, Math.PI * 2);
+      ctx.fillStyle = path === aim.targetPath ? 'rgba(255,214,60,.9)' : 'rgba(120,220,255,.8)';
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawCue() {
+  if (state.phase !== 'aim') return;
+
+  const dir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
+  const pull = 16 + power * 112;
+  const sx = cueBall.x - dir.x * (R + pull);
+  const sy = cueBall.y - dir.y * (R + pull);
+  const cueLen = 240;
+  const ex = sx - dir.x * cueLen;
+  const ey = sy - dir.y * cueLen;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  // 杆身
+  const g = ctx.createLinearGradient(sx, sy, ex, ey);
+  g.addColorStop(0, '#f0e2c4');
+  g.addColorStop(0.12, '#d8c396');
+  g.addColorStop(0.55, '#a97d43');
+  g.addColorStop(1, '#4a2a12');
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(ex, ey);
+  ctx.strokeStyle = g;
+  ctx.lineWidth = 6;
+  ctx.stroke();
+
+  // 皮头
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx - dir.x * 8, sy - dir.y * 8);
+  ctx.strokeStyle = '#2f6fb5';
+  ctx.lineWidth = 7;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawPowerBar() {
+  if (!draggingCue || state.phase !== 'aim') return;
+
+  const bw = 190, bh = 11;
+  const bx = W / 2 - bw / 2;
+  const by = H - 24;
+
+  ctx.save();
+  roundRect(ctx, bx, by, bw, bh, 6);
+  ctx.fillStyle = 'rgba(0,0,0,.5)';
+  ctx.fill();
+
+  const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+  g.addColorStop(0, '#38d97a');
+  g.addColorStop(0.5, '#f5d518');
+  g.addColorStop(1, '#e8452c');
+  ctx.save();
+  roundRect(ctx, bx, by, bw, bh, 6);
+  ctx.clip();
+  ctx.fillStyle = g;
+  ctx.fillRect(bx, by, bw * power, bh);
+  ctx.restore();
+
+  roundRect(ctx, bx, by, bw, bh, 6);
+  ctx.strokeStyle = 'rgba(255,255,255,.35)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,.78)';
+  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`力度 ${Math.round(power * 100)}%`, bx, by - 4);
+  ctx.restore();
+}
+
+function drawBallInHand() {
+  if (state.phase !== 'ballinhand' || state.player !== 0) return;
+
+  const valid = canPlaceCue(mouse.x, mouse.y);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, R + 3, 0, Math.PI * 2);
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = valid ? 'rgba(90,255,150,.9)' : 'rgba(255,80,80,.9)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawEffects() {
+  ctx.save();
+  for (const effect of effects) {
+    const alpha = clamp(effect.life / effect.maxLife, 0, 1);
+    if (effect.type === 'ring') {
+      const progress = 1 - alpha;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, effect.radius + (effect.maxRadius - effect.radius) * progress, 0, Math.PI * 2);
+      ctx.strokeStyle = effect.color;
+      ctx.globalAlpha = alpha * 0.85;
+      ctx.lineWidth = 2.6;
+      ctx.stroke();
+    } else if (effect.type === 'particle') {
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, effect.size * alpha, 0, Math.PI * 2);
+      ctx.fillStyle = effect.color;
+      ctx.globalAlpha = alpha;
+      ctx.fill();
+    } else if (effect.type === 'label') {
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = effect.color;
+      ctx.shadowBlur = 12;
+      ctx.fillText(effect.text, effect.x, effect.y);
+    } else if (effect.type === 'combo') {
+      const progress = 1 - alpha;
+      const scale = 0.74 + Math.min(progress * 4.5, 1) * 0.26;
+      ctx.save();
+      ctx.translate(effect.x, effect.y - progress * 22);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.86)';
+      ctx.fillText(effect.label, 0, -27);
+
+      ctx.font = '900 48px system-ui, sans-serif';
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'rgba(4,10,14,.78)';
+      ctx.strokeText(effect.text, 0, 7);
+      ctx.fillStyle = effect.color;
+      ctx.shadowColor = effect.color;
+      ctx.shadowBlur = 18;
+      ctx.fillText(effect.text, 0, 7);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+function drawGameOver() {
+  if (state.phase !== 'over') return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,.62)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffd83c';
+  ctx.font = 'bold 54px system-ui, sans-serif';
+  ctx.fillText(`${state.winner === 0 ? '你' : '电脑 AI'} 获胜`, W / 2, H / 2 - 22);
+
+  ctx.fillStyle = 'rgba(255,255,255,.75)';
+  ctx.font = '18px system-ui, sans-serif';
+  ctx.fillText('点击画面返回开始界面', W / 2, H / 2 + 44);
+  ctx.restore();
+}
+
+function drawJumpTrail() {
+  const animation = cueBall.jumpAnimation;
+  if (!animation || cueBall.pocketed) return;
+
+  const dx = animation.endX - animation.startX;
+  const dy = animation.endY - animation.startY;
+  const lengthSq = Math.max(1, dx * dx + dy * dy);
+  const progress = clamp(
+    ((cueBall.x - animation.startX) * dx + (cueBall.y - animation.startY) * dy) / lengthSq,
+    0,
+    1
+  );
+  const controlX = (animation.startX + animation.endX) / 2;
+  const controlY = (animation.startY + animation.endY) / 2 - animation.height * 1.45;
+
+  const pointAt = t => {
+    const inverse = 1 - t;
+    return {
+      x: inverse * inverse * animation.startX + 2 * inverse * t * controlX + t * t * animation.endX,
+      y: inverse * inverse * animation.startY + 2 * inverse * t * controlY + t * t * animation.endY
+    };
+  };
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(animation.startX, animation.startY);
+  ctx.quadraticCurveTo(controlX, controlY, animation.endX, animation.endY);
+  ctx.strokeStyle = 'rgba(255,216,92,.24)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 6]);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(animation.startX, animation.startY);
+  const segments = Math.max(2, Math.ceil(progress * 36));
+  for (let index = 1; index <= segments; index++) {
+    const point = pointAt(progress * index / segments);
+    ctx.lineTo(point.x, point.y);
+  }
+  ctx.strokeStyle = 'rgba(255,229,128,.95)';
+  ctx.lineWidth = 2.6;
+  ctx.shadowColor = 'rgba(255,211,76,.8)';
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(animation.endX, animation.endY, R + 4, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,222,104,.65)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 4]);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  drawTable();
+  drawJumpTrail();
+
+  for (const b of balls) {
+    if (b === cueBall) continue;
+    drawBall(b);
+  }
+
+  if (!cueBall.pocketed) drawBall(cueBall);
+
+  drawCue();
+  drawAim();
+  drawEffects();
+  drawBallInHand();
+  drawPowerBar();
+  drawGameOver();
+}
+
+/* ==================== 主循环 ==================== */
+let lastTime = performance.now();
+
+function loop(now) {
+  const dt = Math.min(Math.max((now - lastTime) / 1000, 0), MAX_FRAME_DT);
+  lastTime = now;
+  updateEffects(dt);
+
+  if (state.phase === 'moving') {
+    physicsAccumulator += dt;
+    let steps = 0;
+
+    while (physicsAccumulator >= PHYSICS_STEP && steps < MAX_PHYSICS_STEPS) {
+      physicsStep(PHYSICS_STEP);
+      physicsAccumulator -= PHYSICS_STEP;
+      steps++;
+    }
+
+    if (steps === MAX_PHYSICS_STEPS) physicsAccumulator = 0;
+    if (allStopped()) endShot();
+  } else {
+    physicsAccumulator = 0;
+  }
+
+  if (state.phase === 'ballinhand' && state.player === 0 && matchState === 'playing') {
+    cueBall.x = clamp(mouse.x, TL + R, TR - R);
+    cueBall.y = clamp(mouse.y, TT + R, TB - R);
+    cueBall.pocketed = false;
+  }
+
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ==================== 交互 ==================== */
+function toCanvas(e) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (canvas.width / r.width),
+    y: (e.clientY - r.top) * (canvas.height / r.height)
+  };
+}
+
+function canPlaceCue(x, y) {
+  if (x < TL + R || x > TR - R || y < TT + R || y > TB - R) return false;
+  for (const p of POCKETS) {
+    if (Math.hypot(x - p.x, y - p.y) < p.r + R * 0.25) return false;
+  }
+  for (const b of balls) {
+    if (b === cueBall || b.pocketed) continue;
+    if (len(b.x - x, b.y - y) < 2 * R + 1) return false;
+  }
+  return true;
+}
+
+function updatePointerPosition(e) {
+  const p = toCanvas(e);
+  mouse.x = p.x;
+  mouse.y = p.y;
+  return p;
+}
+
+function updateAimAngle() {
+  if (matchState !== 'playing' || state.phase !== 'aim' || state.player !== 0 || draggingCue || state.aiThinking) return;
+  const dx = mouse.x - cueBall.x;
+  const dy = mouse.y - cueBall.y;
+  if (Math.hypot(dx, dy) > 2) aimAngle = Math.atan2(dy, dx);
+}
+
+function setDragging(active) {
+  draggingCue = active;
+  canvas.classList.toggle('dragging', active);
+}
+
+function updateDragPower(pointer) {
+  const dirX = Math.cos(aimAngle);
+  const dirY = Math.sin(aimAngle);
+  const moveX = pointer.x - dragStart.x;
+  const moveY = pointer.y - dragStart.y;
+  const backwardDistance = Math.max(0, -(moveX * dirX + moveY * dirY));
+  power = clamp(backwardDistance / MAX_PULL_DISTANCE, 0, 1);
+}
+
+function cancelShotDrag(message = '已取消击球') {
+  if (!draggingCue) return;
+  setDragging(false);
+  power = 0;
+  if (state.phase === 'aim') {
+    state.msg = message;
+    updateHUD();
+  }
+}
+
+function releaseShot() {
+  if (!draggingCue) return;
+
+  const shotPower = power;
+  const canShoot = state.phase === 'aim' && shotPower >= MIN_SHOT_POWER;
+  setDragging(false);
+  power = 0;
+
+  if (!canShoot) {
+    if (state.phase === 'aim') {
+      state.msg = '未拖动球杆，已取消击球';
+      updateHUD();
+    }
+    return;
+  }
+
+  doShoot(shotPower);
+}
+
+canvas.addEventListener('pointermove', e => {
+  const pointer = updatePointerPosition(e);
+  if (draggingCue) updateDragPower(pointer);
+  else updateAimAngle();
+});
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const p = updatePointerPosition(e);
+
+  if (e.button === 2) {
+    cancelShotDrag();
+    return;
+  }
+  if (e.button !== 0) return;
+
+  if (state.phase === 'over') { showStartScreen(); return; }
+  if (matchState !== 'playing' || state.player !== 0) return;
+
+  if (state.phase === 'ballinhand') {
+    if (canPlaceCue(p.x, p.y)) {
+      cueBall.x = p.x;
+      cueBall.y = p.y;
+      cueBall.vx = cueBall.vy = 0;
+      cueBall.pocketed = false;
+      state.phase = 'aim';
+      state.msg = `${playerLabel(state.player)} 出杆`;
+      updateHUD();
+      aimAngle = Math.atan2(mouse.y - cueBall.y, mouse.x - cueBall.x);
+    }
+    return;
+  }
+
+  if (state.phase === 'aim') {
+    updateAimAngle();
+    setDragging(true);
+    dragStart = { x: p.x, y: p.y };
+    power = 0;
+    state.msg = '朝拉杆方向移动调整力度，松开击球';
+    updateHUD();
+    if (canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+  }
+});
+
+window.addEventListener('pointerup', e => {
+  if (e.button !== 0) return;
+  releaseShot();
+});
+
+canvas.addEventListener('pointercancel', () => cancelShotDrag());
+window.addEventListener('blur', () => cancelShotDrag());
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') cancelShotDrag();
+  if (e.key.toLowerCase() === 'r' && !e.repeat) showStartScreen();
+});
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ==================== HUD ==================== */
+const elMsg = document.getElementById('msg');
+const elP1 = document.getElementById('p1');
+const elP2 = document.getElementById('p2');
+const elN1 = document.getElementById('n1');
+const elN2 = document.getElementById('n2');
+const elG1 = document.getElementById('g1');
+const elG2 = document.getElementById('g2');
+const elB1 = document.getElementById('b1');
+const elB2 = document.getElementById('b2');
+const elStartScreen = document.getElementById('startScreen');
+const elDiceScreen = document.getElementById('diceScreen');
+const elModeEight = document.getElementById('modeEight');
+const elYourDie = document.getElementById('yourDie');
+const elAiDie = document.getElementById('aiDie');
+const elDiceResult = document.getElementById('diceResult');
+const elSkillDock = document.getElementById('skillDock');
+const elSkillJump = document.getElementById('skillJump');
+const elSkillCurve = document.getElementById('skillCurve');
+
+function updateHUD() {
+  elMsg.textContent = state.msg;
+  elP1.classList.toggle('active', matchState === 'playing' && state.player === 0 && state.phase !== 'over');
+  elP2.classList.toggle('active', matchState === 'playing' && state.player === 1 && state.phase !== 'over');
+
+  const g0 = state.groups[0];
+  const g1 = state.groups[1];
+  elG1.className = 'group-badge' + (g0 ? ` show ${g0}` : '');
+  elG2.className = 'group-badge' + (g1 ? ` show ${g1}` : '');
+  elG1.textContent = g0 ? (g0 === 'solid' ? '全' : '花') : '';
+  elG2.textContent = g1 ? (g1 === 'solid' ? '全' : '花') : '';
+  elN1.textContent = `你${g0 ? ' · ' + groupLabel(g0) : ''}`;
+  elN2.textContent = `电脑 AI${g1 ? ' · ' + groupLabel(g1) : ''}`;
+  renderBallStrip(0, elB1);
+  renderBallStrip(1, elB2);
+  canvas.classList.toggle('ai-turn', matchState === 'playing' && state.player === 1);
+  updateSkillUI();
+}
+
+/* ==================== 启动 ==================== */
+elModeEight.addEventListener('click', beginDiceRoll);
+elSkillJump.addEventListener('click', () => toggleSkill('jump'));
+elSkillCurve.addEventListener('click', () => toggleSkill('curve'));
+drawDie(elYourDie, 1);
+drawDie(elAiDie, 1);
+showStartScreen();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
