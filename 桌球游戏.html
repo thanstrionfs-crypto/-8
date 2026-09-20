@@ -6,7 +6,7 @@
 <title>彩8桌球 · 8 Ball Pool</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  :root { --table-width: min(98.5vw, calc((100vh - 100px) * 1.7778)); }
+  :root { --table-width: min(98.5vw, calc((100vh - 142px) * 1.7778)); }
   html, body {
     height: 100%;
     background: radial-gradient(circle at 50% 0%, #1b2735 0%, #0a0d12 70%);
@@ -90,9 +90,13 @@
     width: var(--table-width);
     line-height: 0;
   }
+  #controlDeck {
+    width: var(--table-width);
+    display: grid;
+    gap: 5px;
+  }
   #skillDock {
-    position: absolute; z-index: 7; right: 7px; bottom: 8px;
-    display: flex; align-items: flex-end; gap: 5px;
+    display: flex; justify-content: flex-end; align-items: center; gap: 5px;
     transition: opacity .2s, visibility .2s;
   }
   #skillDock.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -126,7 +130,7 @@
   .curve-control span { font-size: 10px; font-weight: 800; color: #62e6a5; white-space: nowrap; }
   .curve-control input { width: 128px; accent-color: #62e6a5; cursor: pointer; }
   #mobileControls {
-    position: absolute; z-index: 8; left: 5px; right: 5px; bottom: 42px;
+    width: 100%;
     display: none; align-items: flex-end; justify-content: space-between;
     gap: 8px; pointer-events: none;
   }
@@ -229,7 +233,7 @@
   }
 
   @media (max-width: 760px) {
-    :root { --table-width: min(95vw, calc((100vh - 168px) / 1.7778)); }
+    :root { --table-width: min(95vw, calc((100vh - 166px) / 1.7778)); }
     #hud {
       display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: center;
     }
@@ -243,7 +247,7 @@
     #msg { grid-column: 1 / -1; grid-row: 2; font-size: 12px; padding: 0 6px; min-height: 18px; }
     #tip { width: 94vw; text-align: center; }
     #skillDock {
-      right: 4px; bottom: 5px; gap: 4px;
+      justify-content: center; gap: 4px;
     }
     .skill-button { width: 74px; min-height: 27px; grid-template-columns: 14px 1fr; padding: 3px 5px; }
     .skill-icon { font-size: 14px; }
@@ -252,7 +256,7 @@
   }
 
   @media (max-width: 760px) and (orientation: portrait) {
-    html.is-mobile { --table-width: min(98vw, calc((100vh - 132px) / 1.7778)); }
+    html.is-mobile { --table-width: min(98vw, calc((100vh - 230px) / 1.7778)); }
     html.is-mobile #tableWrap {
       width: var(--table-width);
       height: calc(var(--table-width) * 1.7778);
@@ -331,6 +335,9 @@
 </div>
 
 <div id="tableWrap">
+  <canvas id="game"></canvas>
+</div>
+<div id="controlDeck">
   <div id="skillDock" class="hidden">
     <button class="skill-button" id="skillJump" type="button">
       <span class="skill-icon">↥</span>
@@ -345,7 +352,6 @@
       <input id="curveAngle" type="range" min="-60" max="60" step="0.25" value="35">
     </label>
   </div>
-  <canvas id="game"></canvas>
   <div id="mobileControls">
     <div class="aim-joystick" id="aimJoystick"><span class="aim-knob" id="aimKnob"></span></div>
     <div class="mobile-power">
