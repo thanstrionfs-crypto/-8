@@ -774,7 +774,8 @@ function endPracticeShot() {
   if (!finishedShot) return;
 
   const pocketedObjects = finishedShot.pocketed.filter(number => number !== 0);
-  if (pocketedObjects.length > 0) {
+  const remainingTargets = balls.filter(ball => ball.num !== 0 && !ball.pocketed).length;
+  if (pocketedObjects.length > 0 && remainingTargets === 0) {
     state.phase = 'practice-reset';
     state.msg = `进球！准备刷新第 ${practiceStage + 1} 关`;
     updateHUD();
@@ -791,9 +792,9 @@ function endPracticeShot() {
     cueBall.y = freePosition.y;
     cueBall.vx = cueBall.vy = 0;
     cueBall.pocketed = false;
-    state.msg = `母球落袋，已重新摆放 · 练习第 ${practiceStage} 关`;
+    state.msg = `母球落袋，已重新摆放 · 还剩 ${remainingTargets} 颗球`;
   } else {
-    state.msg = `继续击球 · 练习第 ${practiceStage} 关`;
+    state.msg = `继续击球 · 还剩 ${remainingTargets} 颗球`;
   }
   state.phase = 'aim';
   updateHUD();
