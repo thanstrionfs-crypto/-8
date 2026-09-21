@@ -79,6 +79,8 @@
     text-align: center; flex: 1; display: grid; place-items: center;
     padding: 0 14px;
   }
+  html.practice-mode #p2 { display: none; }
+  html.practice-mode #p1 .ball-strip { display: none; }
   canvas {
     display: block; border-radius: 18px;
     box-shadow: 0 26px 70px rgba(0,0,0,.7);
@@ -185,6 +187,12 @@
     transition: transform .2s, border-color .2s, box-shadow .2s;
   }
   .mode-card:hover { transform: translateY(-3px); border-color: #66dfa4; box-shadow: 0 24px 70px rgba(0,0,0,.5), 0 0 30px rgba(63,191,126,.16); }
+  .mode-card + .mode-card { margin-top: 10px; }
+  .practice-card {
+    background: linear-gradient(135deg, rgba(54,101,138,.34), rgba(15,25,32,.9));
+    border-color: rgba(100,174,224,.42);
+  }
+  .practice-card .mode-enter { color: #83c7f4; }
   .mode-balls { position: relative; width: 64px; height: 54px; }
   .mode-ball {
     position: absolute; width: 34px; height: 34px; border-radius: 50%;
@@ -339,6 +347,17 @@
       <span>
         <span class="mode-title">彩8模式</span>
         <span class="mode-desc">玩家对阵电脑 AI · 全色 / 花色按首次合法进球决定</span>
+      </span>
+      <span class="mode-enter" aria-hidden="true">›</span>
+    </button>
+    <button class="mode-card practice-card" id="modePractice" type="button">
+      <span class="mode-balls">
+        <span class="mode-ball eight" style="background:#f5c518;color:#111">1</span>
+        <span class="mode-ball stripe" style="background:linear-gradient(180deg,#f8f6ef 0 27%,#d62828 27% 73%,#f8f6ef 73%)">2</span>
+      </span>
+      <span>
+        <span class="mode-title">练习模式</span>
+        <span class="mode-desc">依次挑战 1 球、2 球、3 球 · 进球后随机刷新球位</span>
       </span>
       <span class="mode-enter" aria-hidden="true">›</span>
     </button>
@@ -541,6 +560,8 @@ let shot = null;
 let effects = [];
 let aiTimers = [];
 let matchState = 'menu';
+let gameMode = 'eight-ball';
+let practiceStage = 1;
 let skills = {
   jump: false,
   arc: false,
@@ -637,6 +658,132 @@ function newGame(startingPlayer = 0) {
   aimAngle = 0;
   physicsAccumulator = 0;
   canvas.classList.remove('dragging');
+  updateHUD();
+}
+
+function randomPracticePosition(existing) {
+  for (let attempt = 0; attempt < 220; attempt++) {
+    const x = TL + R + 34 + Math.random() * (TW - (R + 34) * 2);
+    const y = TT + R + 34 + Math.random() * (TH - (R + 34) * 2);
+    let valid = true;
+    for (const pocket of POCKETS) {
+      if (Math.hypot(x - pocket.x, y - pocket.y) < pocket.r + R + 8) {
+        valid = false;
+        break;
+      }
+    }
+    if (!valid) continue;
+    for (const ball of existing) {
+      if (Math.hypot(x - ball.x, y - ball.y) < 2 * R + 24) {
+        valid = false;
+        break;
+      }
+    }
+    if (valid) return { x, y };
+  }
+  return {
+    x: TL + 90 + Math.random() * (TW - 180),
+    y: TT + 90 + Math.random() * (TH - 180)
+  };
+}
+
+function setupPracticeStage(stage) {
+  clearAITimers();
+  balls = [];
+  effects = [];
+  practiceStage = clamp(stage, 1, 3);
+  const cuePosition = randomPracticePosition([]);
+  cueBall = makeBall(0, cuePosition.x, cuePosition.y);
+  balls.push(cueBall);
+
+  const pool = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+  for (let index = pool.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
+  }
+  for (let index = 0; index < practiceStage; index++) {
+    const position = randomPracticePosition(balls);
+    balls.push(makeBall(pool[index], position.x, position.y));
+  }
+
+  state = {
+    phase: 'aim',
+    player: 0,
+    groups: [null, null],
+    open: false,
+    breakPending: false,
+    msg: `练习 ${practiceStage}/3：打进任意目标球`,
+    winner: null,
+    aiThinking: false,
+    combo: [0, 0],
+    firstPocketPromptShown: false
+  };
+  shot = null;
+  draggingCue = false;
+  power = 0;
+  mobilePower = 0;
+  physicsAccumulator = 0;
+  skills = {
+    jump: false,
+    arc: false,
+    curveAngle: 35,
+    jumpTarget: null,
+    jumpLocked: false
+  };
+  matchState = 'playing';
+  gameMode = 'practice';
+  document.documentElement.classList.add('practice-mode');
+  updateHUD();
+}
+
+function startPracticeMode() {
+  elSettingsPanel.hidden = true;
+  elStartScreen.classList.remove('visible');
+  elDiceScreen.classList.remove('visible');
+  gameMode = 'practice';
+  setupPracticeStage(1);
+}
+
+function completePractice() {
+  clearAITimers();
+  state.phase = 'over';
+  state.winner = 0;
+  state.msg = '练习完成！点击画面重新开始';
+  shot = null;
+  updateHUD();
+}
+
+function endPracticeShot() {
+  const finishedShot = shot;
+  shot = null;
+  if (!finishedShot) return;
+
+  const pocketedObjects = finishedShot.pocketed.filter(number => number !== 0);
+  if (pocketedObjects.length > 0) {
+    if (practiceStage >= 3) {
+      completePractice();
+      return;
+    }
+    state.phase = 'practice-reset';
+    state.msg = `进球！准备刷新 ${practiceStage + 1} 颗目标球`;
+    updateHUD();
+    queueAITimer(() => {
+      setupPracticeStage(practiceStage + 1);
+    }, 650);
+    return;
+  }
+
+  if (finishedShot.cuePocketed) {
+    const freePosition = randomPracticePosition(balls.filter(ball => ball !== cueBall && !ball.pocketed));
+    cueBall.x = freePosition.x;
+    cueBall.y = freePosition.y;
+    cueBall.vx = cueBall.vy = 0;
+    cueBall.pocketed = false;
+    state.msg = `母球落袋，已重新摆放 · 练习 ${practiceStage}/3`;
+  } else {
+    state.msg = `继续击球 · 练习 ${practiceStage}/3`;
+  }
+  state.phase = 'aim';
   updateHUD();
 }
 
@@ -1298,6 +1445,10 @@ function endShot() {
   const me = state.player;
   const s = shot;
   if (!s) return;
+  if (gameMode === 'practice') {
+    endPracticeShot();
+    return;
+  }
 
   const breakEightSpotted = s.isBreak && s.pocketed.includes(8);
   if (breakEightSpotted) {
@@ -1421,6 +1572,8 @@ function showStartScreen() {
   elSkinList.hidden = true;
   diceSequence++;
   clearAITimers();
+  gameMode = 'eight-ball';
+  document.documentElement.classList.remove('practice-mode');
   matchState = 'menu';
   newGame(0);
   state.msg = '等待开始';
@@ -1432,6 +1585,8 @@ function showStartScreen() {
 
 function beginDiceRoll() {
   if (matchState !== 'menu') return;
+  gameMode = 'eight-ball';
+  document.documentElement.classList.remove('practice-mode');
   elSettingsPanel.hidden = true;
   elSkinList.hidden = true;
   matchState = 'rolling';
@@ -2598,11 +2753,19 @@ function drawGameOver() {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffd83c';
   ctx.font = 'bold 54px system-ui, sans-serif';
-  ctx.fillText(`${state.winner === 0 ? '你' : '电脑 AI'} 获胜`, W / 2, H / 2 - 22);
+  ctx.fillText(
+    gameMode === 'practice' ? '练习完成' : `${state.winner === 0 ? '你' : '电脑 AI'} 获胜`,
+    W / 2,
+    H / 2 - 22
+  );
 
   ctx.fillStyle = 'rgba(255,255,255,.75)';
   ctx.font = '18px system-ui, sans-serif';
-  ctx.fillText('点击画面返回开始界面', W / 2, H / 2 + 44);
+  ctx.fillText(
+    gameMode === 'practice' ? '点击画面重新开始练习' : '点击画面返回开始界面',
+    W / 2,
+    H / 2 + 44
+  );
   ctx.restore();
 }
 
@@ -2849,7 +3012,11 @@ canvas.addEventListener('pointerdown', e => {
   }
   if (e.button !== 0) return;
 
-  if (state.phase === 'over') { showStartScreen(); return; }
+  if (state.phase === 'over') {
+    if (gameMode === 'practice') startPracticeMode();
+    else showStartScreen();
+    return;
+  }
   if (matchState !== 'playing' || state.player !== 0) return;
 
   if (state.phase === 'ballinhand') {
@@ -2909,6 +3076,7 @@ const elB2 = document.getElementById('b2');
 const elStartScreen = document.getElementById('startScreen');
 const elDiceScreen = document.getElementById('diceScreen');
 const elModeEight = document.getElementById('modeEight');
+const elModePractice = document.getElementById('modePractice');
 const elYourDie = document.getElementById('yourDie');
 const elAiDie = document.getElementById('aiDie');
 const elDiceResult = document.getElementById('diceResult');
@@ -2957,6 +3125,7 @@ function updateHUD() {
 
 /* ==================== 启动 ==================== */
 elModeEight.addEventListener('click', beginDiceRoll);
+elModePractice.addEventListener('click', startPracticeMode);
 document.addEventListener('pointerdown', ensureAudioContext, { passive: true });
 elSettingsButton.addEventListener('click', () => {
   elSettingsPanel.hidden = false;
