@@ -197,13 +197,32 @@
   .mode-desc { display: block; color: #9db0bf; font-size: 12px; line-height: 1.55; }
   .mode-enter { color: #65e2a7; font-size: 26px; }
   .start-note { margin-top: 22px; color: #5f7283; font-size: 12px; letter-spacing: 1px; }
-  .control-settings {
-    width: min(430px, 86vw); margin: 20px auto 0; padding: 11px 13px;
-    display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px;
-    color: #aebfcd; background: rgba(255,255,255,.035);
-    border: 1px solid rgba(255,255,255,.09); border-radius: 10px;
+  .settings-trigger {
+    position: fixed; top: 22px; right: 24px; z-index: 25;
+    min-width: 84px; min-height: 34px; padding: 6px 14px;
+    color: #dce8f1; background: rgba(12,22,28,.44);
+    border: 1px solid rgba(255,255,255,.16); border-radius: 9px;
+    font-size: 12px; cursor: pointer; backdrop-filter: blur(3px);
   }
-  .control-settings > span { font-size: 12px; font-weight: 700; }
+  .settings-modal {
+    position: fixed; inset: 0; z-index: 35; display: grid; place-items: center;
+    background: rgba(4,8,12,.72); backdrop-filter: blur(6px);
+  }
+  .settings-modal[hidden] { display: none; }
+  .settings-card {
+    width: min(390px, 88vw); padding: 22px; position: relative;
+    background: linear-gradient(145deg, rgba(20,35,42,.98), rgba(10,17,22,.98));
+    border: 1px solid rgba(98,230,165,.28); border-radius: 14px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.55);
+  }
+  .settings-card h2 { font-size: 22px; margin-bottom: 18px; }
+  .settings-close {
+    position: absolute; top: 12px; right: 12px; width: 30px; height: 30px;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 50%;
+    color: #cbd9e3; background: rgba(255,255,255,.05); cursor: pointer;
+  }
+  .settings-group + .settings-group { margin-top: 18px; }
+  .settings-group h3 { font-size: 13px; color: #aebfcd; margin-bottom: 9px; }
   .control-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .control-option {
     min-height: 30px; border: 1px solid rgba(255,255,255,.12);
@@ -214,6 +233,15 @@
     color: #dffbed; border-color: rgba(98,230,165,.72);
     background: rgba(43,139,92,.42);
   }
+  .skin-picker, .skin-option {
+    width: 100%; min-height: 34px; border-radius: 8px; cursor: pointer;
+    color: #c7d5df; background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.13); font-size: 12px;
+  }
+  .skin-list { margin-top: 7px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .skin-list[hidden] { display: none; }
+  .skin-option.active { color: #dffbed; border-color: rgba(98,230,165,.72); background: rgba(43,139,92,.42); }
+  html.skin-monochrome body { filter: grayscale(1); }
 
   .dice-wrap { width: min(620px, 90vw); text-align: center; }
   .dice-wrap h2 { font-size: clamp(28px, 5vw, 44px); }
@@ -314,14 +342,29 @@
       </span>
       <span class="mode-enter" aria-hidden="true">›</span>
     </button>
-    <div class="control-settings">
-      <span>操作设置</span>
-      <div class="control-options">
-        <button class="control-option" id="controlTouch" type="button">触控操作</button>
-        <button class="control-option" id="controlMouse" type="button">鼠标操作</button>
+    <div class="start-note">先清完本方球，再合法打进 8 号球获胜</div>
+  </div>
+  <button class="settings-trigger" id="settingsButton" type="button">设置</button>
+  <div class="settings-modal" id="settingsPanel" hidden>
+    <div class="settings-card">
+      <button class="settings-close" id="settingsClose" type="button" aria-label="关闭设置">×</button>
+      <h2>设置</h2>
+      <div class="settings-group">
+        <h3>操作方式</h3>
+        <div class="control-options">
+          <button class="control-option" id="controlMouse" type="button">键鼠</button>
+          <button class="control-option" id="controlTouch" type="button">触屏</button>
+        </div>
+      </div>
+      <div class="settings-group">
+        <h3>按钮皮肤</h3>
+        <button class="skin-picker" id="skinPicker" type="button">选择皮肤</button>
+        <div class="skin-list" id="skinList" hidden>
+          <button class="skin-option" id="skinClassic" type="button">经典皮肤</button>
+          <button class="skin-option" id="skinMonochrome" type="button">摸鱼皮肤</button>
+        </div>
       </div>
     </div>
-    <div class="start-note">先清完本方球，再合法打进 8 号球获胜</div>
   </div>
 </div>
 
@@ -410,13 +453,19 @@ const isMobileDevice = Boolean(
 );
 document.documentElement.classList.toggle('is-mobile', isMobileDevice);
 let controlMode = isMobileDevice ? 'touch' : 'mouse';
+let buttonSkin = 'classic';
 try {
   const storedControlMode = localStorage.getItem('poolControlMode');
   if (storedControlMode === 'touch' || storedControlMode === 'mouse') {
     controlMode = storedControlMode;
   }
+  const storedSkin = localStorage.getItem('poolButtonSkin');
+  if (storedSkin === 'classic' || storedSkin === 'monochrome') {
+    buttonSkin = storedSkin;
+  }
 } catch (_) {}
 document.documentElement.classList.toggle('touch-controls', controlMode === 'touch');
+document.documentElement.classList.toggle('skin-monochrome', buttonSkin === 'monochrome');
 if (isMobileDevice) {
   document.addEventListener('gesturestart', event => event.preventDefault(), { passive: false });
   document.addEventListener('gesturechange', event => event.preventDefault(), { passive: false });
@@ -1285,6 +1334,8 @@ function drawDie(element, value, rolling = false) {
 }
 
 function showStartScreen() {
+  elSettingsPanel.hidden = true;
+  elSkinList.hidden = true;
   diceSequence++;
   clearAITimers();
   matchState = 'menu';
@@ -1298,6 +1349,8 @@ function showStartScreen() {
 
 function beginDiceRoll() {
   if (matchState !== 'menu') return;
+  elSettingsPanel.hidden = true;
+  elSkinList.hidden = true;
   matchState = 'rolling';
   clearAITimers();
   newGame(0);
@@ -1402,6 +1455,18 @@ function applyControlMode(mode, persist = true) {
     try { localStorage.setItem('poolControlMode', mode); } catch (_) {}
   }
   updateHUD();
+}
+
+function applyButtonSkin(skin, persist = true) {
+  if (skin !== 'classic' && skin !== 'monochrome') return;
+  buttonSkin = skin;
+  document.documentElement.classList.toggle('skin-monochrome', skin === 'monochrome');
+  elSkinClassic.classList.toggle('active', skin === 'classic');
+  elSkinMonochrome.classList.toggle('active', skin === 'monochrome');
+  elSkinPicker.textContent = skin === 'monochrome' ? '摸鱼皮肤' : '经典皮肤';
+  if (persist) {
+    try { localStorage.setItem('poolButtonSkin', skin); } catch (_) {}
+  }
 }
 
 function updateAimJoystick(event) {
@@ -2770,6 +2835,13 @@ const elMobilePowerLabel = document.getElementById('mobilePowerLabel');
 const elMobileShoot = document.getElementById('mobileShoot');
 const elControlTouch = document.getElementById('controlTouch');
 const elControlMouse = document.getElementById('controlMouse');
+const elSettingsButton = document.getElementById('settingsButton');
+const elSettingsPanel = document.getElementById('settingsPanel');
+const elSettingsClose = document.getElementById('settingsClose');
+const elSkinPicker = document.getElementById('skinPicker');
+const elSkinList = document.getElementById('skinList');
+const elSkinClassic = document.getElementById('skinClassic');
+const elSkinMonochrome = document.getElementById('skinMonochrome');
 
 function updateHUD() {
   elMsg.textContent = state.msg;
@@ -2792,6 +2864,18 @@ function updateHUD() {
 
 /* ==================== 启动 ==================== */
 elModeEight.addEventListener('click', beginDiceRoll);
+elSettingsButton.addEventListener('click', () => {
+  elSettingsPanel.hidden = false;
+});
+elSettingsClose.addEventListener('click', () => {
+  elSettingsPanel.hidden = true;
+  elSkinList.hidden = true;
+});
+elSkinPicker.addEventListener('click', () => {
+  elSkinList.hidden = !elSkinList.hidden;
+});
+elSkinClassic.addEventListener('click', () => applyButtonSkin('classic'));
+elSkinMonochrome.addEventListener('click', () => applyButtonSkin('monochrome'));
 elControlTouch.addEventListener('click', () => applyControlMode('touch'));
 elControlMouse.addEventListener('click', () => applyControlMode('mouse'));
 elSkillJump.addEventListener('click', () => toggleSkill('jump'));
@@ -2839,6 +2923,7 @@ drawDie(elYourDie, 1);
 drawDie(elAiDie, 1);
 showStartScreen();
 applyControlMode(controlMode, false);
+applyButtonSkin(buttonSkin, false);
 requestAnimationFrame(loop);
 
 })();
