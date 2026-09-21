@@ -357,7 +357,7 @@
       </span>
       <span>
         <span class="mode-title">练习模式</span>
-        <span class="mode-desc">依次挑战 1 球、2 球、3 球 · 进球后随机刷新球位</span>
+        <span class="mode-desc">从 1 球开始持续进阶 · 进球后随机刷新下一关球位</span>
       </span>
       <span class="mode-enter" aria-hidden="true">›</span>
     </button>
@@ -562,6 +562,8 @@ let aiTimers = [];
 let matchState = 'menu';
 let gameMode = 'eight-ball';
 let practiceStage = 1;
+let isPagePaused = false;
+let pausedDice = false;
 let skills = {
   jump: false,
   arc: false,
@@ -681,6 +683,25 @@ function randomPracticePosition(existing) {
     }
     if (valid) return { x, y };
   }
+  for (let x = TL + R + 28; x <= TR - R - 28; x += 2 * R + 18) {
+    for (let y = TT + R + 28; y <= TB - R - 28; y += 2 * R + 18) {
+      let valid = true;
+      for (const pocket of POCKETS) {
+        if (Math.hypot(x - pocket.x, y - pocket.y) < pocket.r + R + 6) {
+          valid = false;
+          break;
+        }
+      }
+      if (!valid) continue;
+      for (const ball of existing) {
+        if (Math.hypot(x - ball.x, y - ball.y) < 2 * R + 10) {
+          valid = false;
+          break;
+        }
+      }
+      if (valid) return { x, y };
+    }
+  }
   return {
     x: TL + 90 + Math.random() * (TW - 180),
     y: TT + 90 + Math.random() * (TH - 180)
@@ -691,7 +712,8 @@ function setupPracticeStage(stage) {
   clearAITimers();
   balls = [];
   effects = [];
-  practiceStage = clamp(stage, 1, 3);
+  practiceStage = Math.max(1, Math.floor(stage));
+  const targetCount = Math.min(practiceStage, 15);
   const cuePosition = randomPracticePosition([]);
   cueBall = makeBall(0, cuePosition.x, cuePosition.y);
   balls.push(cueBall);
@@ -701,7 +723,7 @@ function setupPracticeStage(stage) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
   }
-  for (let index = 0; index < practiceStage; index++) {
+  for (let index = 0; index < targetCount; index++) {
     const position = randomPracticePosition(balls);
     balls.push(makeBall(pool[index], position.x, position.y));
   }
@@ -712,7 +734,7 @@ function setupPracticeStage(stage) {
     groups: [null, null],
     open: false,
     breakPending: false,
-    msg: `练习 ${practiceStage}/3：打进任意目标球`,
+    msg: `练习第 ${practiceStage} 关：打进任意目标球`,
     winner: null,
     aiThinking: false,
     combo: [0, 0],
@@ -744,15 +766,6 @@ function startPracticeMode() {
   setupPracticeStage(1);
 }
 
-function completePractice() {
-  clearAITimers();
-  state.phase = 'over';
-  state.winner = 0;
-  state.msg = '练习完成！点击画面重新开始';
-  shot = null;
-  updateHUD();
-}
-
 function endPracticeShot() {
   const finishedShot = shot;
   shot = null;
@@ -760,12 +773,8 @@ function endPracticeShot() {
 
   const pocketedObjects = finishedShot.pocketed.filter(number => number !== 0);
   if (pocketedObjects.length > 0) {
-    if (practiceStage >= 3) {
-      completePractice();
-      return;
-    }
     state.phase = 'practice-reset';
-    state.msg = `进球！准备刷新 ${practiceStage + 1} 颗目标球`;
+    state.msg = `进球！准备刷新第 ${practiceStage + 1} 关`;
     updateHUD();
     queueAITimer(() => {
       setupPracticeStage(practiceStage + 1);
@@ -779,9 +788,9 @@ function endPracticeShot() {
     cueBall.y = freePosition.y;
     cueBall.vx = cueBall.vy = 0;
     cueBall.pocketed = false;
-    state.msg = `母球落袋，已重新摆放 · 练习 ${practiceStage}/3`;
+    state.msg = `母球落袋，已重新摆放 · 练习第 ${practiceStage} 关`;
   } else {
-    state.msg = `继续击球 · 练习 ${practiceStage}/3`;
+    state.msg = `继续击球 · 练习第 ${practiceStage} 关`;
   }
   state.phase = 'aim';
   updateHUD();
@@ -1273,6 +1282,39 @@ function queueAITimer(callback, delay) {
   }, delay);
   aiTimers.push(timer);
   return timer;
+}
+
+function pauseGame() {
+  if (isPagePaused) return;
+  isPagePaused = true;
+  pausedDice = matchState === 'rolling';
+  if (pausedDice) {
+    diceSequence++;
+    matchState = 'menu';
+  }
+  clearAITimers();
+  cancelShotDrag('窗口已暂停');
+  lastTime = performance.now();
+}
+
+function resumeGame() {
+  if (!isPagePaused) return;
+  isPagePaused = false;
+  lastTime = performance.now();
+
+  if (pausedDice) {
+    pausedDice = false;
+    beginDiceRoll();
+    return;
+  }
+  if (matchState !== 'playing') return;
+
+  if (gameMode === 'practice' && state.phase === 'practice-reset') {
+    queueAITimer(() => setupPracticeStage(practiceStage + 1), 150);
+    return;
+  }
+  if (state.player === 1 && state.phase === 'aim') scheduleAITurn();
+  if (state.player === 1 && state.phase === 'ballinhand') scheduleAIBallInHand();
 }
 
 function activeObjectBalls() {
@@ -2848,6 +2890,11 @@ function render() {
 let lastTime = performance.now();
 
 function loop(now) {
+  if (isPagePaused) {
+    lastTime = now;
+    requestAnimationFrame(loop);
+    return;
+  }
   const dt = Math.min(Math.max((now - lastTime) / 1000, 0), MAX_FRAME_DT);
   lastTime = now;
   updateEffects(dt);
@@ -3056,6 +3103,12 @@ window.addEventListener('pointerup', e => {
 
 canvas.addEventListener('pointercancel', () => cancelShotDrag());
 window.addEventListener('blur', () => cancelShotDrag());
+window.addEventListener('blur', pauseGame);
+window.addEventListener('focus', resumeGame);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseGame();
+  else resumeGame();
+});
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') cancelShotDrag();
   if (e.key.toLowerCase() === 'r' && !e.repeat) showStartScreen();
