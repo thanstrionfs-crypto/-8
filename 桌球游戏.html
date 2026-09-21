@@ -559,6 +559,10 @@ let mobilePower = 0;
 let joystickPointerId = null;
 let joystickLastAngle = null;
 let physicsAccumulator = 0;
+let audioContext = null;
+let audioCueCount = 0;
+let lastBallSoundTime = 0;
+let lastCushionSoundTime = 0;
 
 /* ==================== 创建球 ==================== */
 function makeBall(num, x, y) {
@@ -613,7 +617,8 @@ function newGame(startingPlayer = 0) {
     msg: `${startingPlayer === 0 ? '你' : '电脑 AI'} 准备开球`,
     winner: null,
     aiThinking: false,
-    combo: [0, 0]
+    combo: [0, 0],
+    firstPocketPromptShown: false
   };
   skills = {
     jump: false,
@@ -655,23 +660,75 @@ function markRailContact() {
   if (shot && shot.firstHit !== null) shot.railAfterContact = true;
 }
 
+function ensureAudioContext() {
+  try {
+    if (!audioContext) {
+      const AudioContextType = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextType) return null;
+      audioContext = new AudioContextType();
+    }
+    if (audioContext.state === 'suspended') audioContext.resume();
+    return audioContext;
+  } catch (_) {
+    return null;
+  }
+}
+
+function playAudioTone(frequency, duration, volume, type = 'sine') {
+  const context = ensureAudioContext();
+  if (!context) return;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  const now = context.currentTime;
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, now);
+  oscillator.frequency.exponentialRampToValueAtTime(Math.max(45, frequency * 0.72), now + duration);
+  gain.gain.setValueAtTime(Math.max(0.0001, volume), now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(now);
+  oscillator.stop(now + duration + 0.01);
+  audioCueCount++;
+}
+
+function playBallCollisionSound(speed) {
+  const now = performance.now();
+  if (now - lastBallSoundTime < 24 || speed < 45) return;
+  lastBallSoundTime = now;
+  const strength = clamp(speed / 1150, 0, 1);
+  playAudioTone(180 + strength * 520, 0.045 + strength * 0.035, 0.015 + strength * 0.05, 'triangle');
+}
+
+function playCushionSound(speed) {
+  const now = performance.now();
+  if (now - lastCushionSoundTime < 28 || speed < 40) return;
+  lastCushionSoundTime = now;
+  const strength = clamp(speed / 1300, 0, 1);
+  playAudioTone(95 + strength * 95, 0.06 + strength * 0.04, 0.012 + strength * 0.035, 'sine');
+}
+
 function resolveCushion(b) {
   if (b.x - R < TL) {
+    if (b.vx < 0) playCushionSound(Math.abs(b.vx));
     b.x = TL + R;
     b.vx = Math.abs(b.vx) * CUSHION_RESTITUTION;
     markRailContact();
   }
   if (b.x + R > TR) {
+    if (b.vx > 0) playCushionSound(Math.abs(b.vx));
     b.x = TR - R;
     b.vx = -Math.abs(b.vx) * CUSHION_RESTITUTION;
     markRailContact();
   }
   if (b.y - R < TT) {
+    if (b.vy < 0) playCushionSound(Math.abs(b.vy));
     b.y = TT + R;
     b.vy = Math.abs(b.vy) * CUSHION_RESTITUTION;
     markRailContact();
   }
   if (b.y + R > TB) {
+    if (b.vy > 0) playCushionSound(Math.abs(b.vy));
     b.y = TB - R;
     b.vy = -Math.abs(b.vy) * CUSHION_RESTITUTION;
     markRailContact();
@@ -692,6 +749,10 @@ function capturePocket(b) {
     if (shot) {
       if (b === cueBall) shot.cuePocketed = true;
       else if (!shot.pocketed.includes(b.num)) shot.pocketed.push(b.num);
+    }
+    if (b !== cueBall && !state.firstPocketPromptShown) {
+      state.firstPocketPromptShown = true;
+      spawnFirstPocketEffect(b);
     }
     if (b !== cueBall) registerPocketCombo(b);
     spawnPocketEffect(b, p);
@@ -746,6 +807,7 @@ function resolveBallCollisions() {
         const normalSpeed = relativeVx * nx + relativeVy * ny;
 
         if (normalSpeed < 0) {
+          playBallCollisionSound(Math.abs(normalSpeed));
           const impulse = -(1 + BALL_RESTITUTION) * normalSpeed / 2;
           a.vx -= impulse * nx;
           a.vy -= impulse * ny;
@@ -854,9 +916,14 @@ function allStopped() {
 
 /* ==================== 出杆 ==================== */
 function doShoot(pw) {
+  if (skills.jump && (!skills.jumpTarget || !skills.jumpLocked)) {
+    state.msg = '请先点选并锁定跳球目标';
+    updateHUD();
+    return;
+  }
   const speed = 240 + pw * (MAX_SPEED - 240);
   const dx = Math.cos(aimAngle), dy = Math.sin(aimAngle);
-  const jumpPlan = skills.jump
+  const jumpPlan = skills.jump && skills.jumpLocked && skills.jumpTarget
     ? findJumpTarget({ x: dx, y: dy }, skills.jumpTarget, skills.jumpLocked)
     : { target: null, skipped: [] };
   const jumpBall = jumpPlan.target;
@@ -987,6 +1054,22 @@ function spawnComboEffect(count, player) {
     life: 1.2,
     maxLife: 1.2
   });
+}
+
+function spawnFirstPocketEffect(ball) {
+  effects = effects.filter(effect => effect.type !== 'firstPocket');
+  effects.push({
+    type: 'firstPocket',
+    x: W / 2,
+    y: H * 0.34,
+    text: '进球！',
+    label: `第一颗球 · ${ball.num} 号`,
+    color: '#ffd85b',
+    life: 1.45,
+    maxLife: 1.45
+  });
+  playAudioTone(660, 0.11, 0.055, 'triangle');
+  setTimeout(() => playAudioTone(880, 0.14, 0.045, 'sine'), 80);
 }
 
 function spawnPocketEffect(ball, pocket) {
@@ -1518,10 +1601,10 @@ function updateSkillUI() {
   elSkillJump.disabled = !enabled;
   elSkillCurve.disabled = !enabled;
   elSkillJump.classList.toggle('active', jumpActive);
-  elSkillLock.hidden = !jumpActive;
-  elSkillLock.disabled = !jumpActive;
+  elSkillLock.hidden = !jumpActive || !skills.jumpLocked;
+  elSkillLock.disabled = !jumpActive || !skills.jumpLocked;
   elSkillLock.classList.toggle('active', jumpActive && skills.jumpLocked);
-  elSkillLockName.textContent = skills.jumpLocked ? '已锁' : '锁定';
+  elSkillLockName.textContent = '解锁';
   elSkillCurve.classList.toggle('active', curveActive);
   elCurveControl.classList.toggle('show', curveActive);
   elCurveAngle.disabled = !curveActive;
@@ -1535,13 +1618,15 @@ function toggleSkill(type) {
   cancelShotDrag();
   if (type === 'jump') skills.jump = !skills.jump;
   if (type === 'curve') skills.arc = !skills.arc;
-  if (!skills.jump) skills.jumpTarget = null;
-  if (!skills.jump) skills.jumpLocked = false;
+  if (type === 'jump') {
+    skills.jumpTarget = null;
+    skills.jumpLocked = false;
+  }
 
   if (skills.jump && skills.arc) {
     state.msg = `跳球 + 弧球：越过全部阻挡后，目标球转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else if (skills.jump) {
-    state.msg = '跳球已启用：点击球可指定跳球目标';
+    state.msg = '跳球已启用：请直接点选要跳到的目标球';
   } else if (skills.arc) {
     state.msg = `弧球已启用：目标球将转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else {
@@ -1557,27 +1642,13 @@ function toggleJumpLock() {
 
   if (skills.jumpLocked) {
     skills.jumpLocked = false;
-    state.msg = '跳球目标已解锁，可自由调整虚线';
+    skills.jumpTarget = null;
+    state.msg = '跳球目标已解锁，请重新点选目标球';
     updateHUD();
     return;
   }
 
-  if (!skills.jumpTarget || skills.jumpTarget.pocketed) {
-    const dir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
-    skills.jumpTarget = findJumpTarget(dir).target;
-  }
-  if (!skills.jumpTarget) {
-    state.msg = '当前方向没有可锁定的跳球目标';
-    updateHUD();
-    return;
-  }
-
-  skills.jumpLocked = true;
-  aimAngle = Math.atan2(
-    skills.jumpTarget.y - cueBall.y,
-    skills.jumpTarget.x - cueBall.x
-  );
-  state.msg = `目标已锁定：${skills.jumpTarget.num} 号球，可小范围调整虚线`;
+  state.msg = '请直接点选需要跳到的目标球';
   updateHUD();
 }
 
@@ -1595,8 +1666,9 @@ function selectJumpTargetAt(point) {
   }
   if (!selected) return false;
   skills.jumpTarget = selected;
+  skills.jumpLocked = true;
   aimAngle = Math.atan2(selected.y - cueBall.y, selected.x - cueBall.x);
-  state.msg = `跳球目标已选择：${selected.num} 号球，已自动瞄准`;
+  state.msg = `已锁定 ${selected.num} 号球，可微调虚线`;
   updateHUD();
   return true;
 }
@@ -1958,7 +2030,7 @@ function computeAim() {
   let mainPath = null;
 
   hit = raycast(cueBall, dir, predictionIgnore);
-  if (skills.jump && hit.ball) {
+  if (skills.jump && skills.jumpLocked && skills.jumpTarget && hit.ball) {
     const jumpPlan = findJumpTarget(dir, skills.jumpTarget, skills.jumpLocked);
     if (jumpPlan.target) {
       jumpBall = jumpPlan.target;
@@ -2467,6 +2539,27 @@ function drawEffects() {
       ctx.shadowColor = effect.color;
       ctx.shadowBlur = 12;
       ctx.fillText(effect.text, effect.x, effect.y);
+    } else if (effect.type === 'firstPocket') {
+      const progress = 1 - alpha;
+      const scale = 0.72 + Math.min(progress * 4, 1) * 0.32;
+      ctx.save();
+      ctx.translate(effect.x, effect.y - progress * 26);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      ctx.fillText(effect.label, 0, -31);
+      ctx.font = '900 58px system-ui, sans-serif';
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = 'rgba(5,10,14,.82)';
+      ctx.strokeText(effect.text, 0, 10);
+      ctx.fillStyle = effect.color;
+      ctx.shadowColor = effect.color;
+      ctx.shadowBlur = 22;
+      ctx.fillText(effect.text, 0, 10);
+      ctx.restore();
     } else if (effect.type === 'combo') {
       const progress = 1 - alpha;
       const scale = 0.74 + Math.min(progress * 4.5, 1) * 0.26;
@@ -2864,6 +2957,7 @@ function updateHUD() {
 
 /* ==================== 启动 ==================== */
 elModeEight.addEventListener('click', beginDiceRoll);
+document.addEventListener('pointerdown', ensureAudioContext, { passive: true });
 elSettingsButton.addEventListener('click', () => {
   elSettingsPanel.hidden = false;
 });
