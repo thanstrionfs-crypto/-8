@@ -564,6 +564,8 @@ let gameMode = 'eight-ball';
 let practiceStage = 1;
 let isPagePaused = false;
 let pausedDice = false;
+let isWindowFocused = document.hasFocus();
+let backgroundSimulationTimer = null;
 let skills = {
   jump: false,
   arc: false,
@@ -779,6 +781,7 @@ function endPracticeShot() {
     queueAITimer(() => {
       setupPracticeStage(practiceStage + 1);
     }, 650);
+    maybePauseForPlayerTurn();
     return;
   }
 
@@ -794,6 +797,7 @@ function endPracticeShot() {
   }
   state.phase = 'aim';
   updateHUD();
+  maybePauseForPlayerTurn();
 }
 
 /* ==================== 物理 ==================== */
@@ -891,8 +895,22 @@ function resolveCushion(b) {
   }
 }
 
+function getCueJumpProgress() {
+  const animation = cueBall && cueBall.jumpAnimation;
+  if (!animation) return 1;
+  const dx = animation.endX - animation.startX;
+  const dy = animation.endY - animation.startY;
+  const lengthSq = Math.max(1, dx * dx + dy * dy);
+  return clamp(
+    ((cueBall.x - animation.startX) * dx + (cueBall.y - animation.startY) * dy) / lengthSq,
+    0,
+    1
+  );
+}
+
 function capturePocket(b) {
   if (b.pocketed) return;
+  if (b === cueBall && getCueJumpProgress() < 0.995) return;
 
   for (const p of POCKETS) {
     if (Math.hypot(b.x - p.x, b.y - p.y) >= p.r) continue;
@@ -1293,6 +1311,7 @@ function pauseGame() {
     matchState = 'menu';
   }
   clearAITimers();
+  stopBackgroundSimulation();
   cancelShotDrag('窗口已暂停');
   lastTime = performance.now();
 }
@@ -1315,6 +1334,75 @@ function resumeGame() {
   }
   if (state.player === 1 && state.phase === 'aim') scheduleAITurn();
   if (state.player === 1 && state.phase === 'ballinhand') scheduleAIBallInHand();
+}
+
+function shouldPauseForHumanTurn() {
+  if (matchState === 'rolling') return true;
+  if (matchState !== 'playing') return false;
+  return state.player === 0;
+}
+
+function startBackgroundSimulation() {
+  if (backgroundSimulationTimer) return;
+  backgroundSimulationTimer = setInterval(() => {
+    if (
+      isPagePaused ||
+      matchState !== 'playing' ||
+      state.player !== 1 ||
+      state.phase !== 'moving'
+    ) return;
+
+    physicsAccumulator += 1 / 60;
+    let steps = 0;
+    while (physicsAccumulator >= PHYSICS_STEP && steps < MAX_PHYSICS_STEPS) {
+      physicsStep(PHYSICS_STEP);
+      physicsAccumulator -= PHYSICS_STEP;
+      steps++;
+    }
+    if (steps === MAX_PHYSICS_STEPS) physicsAccumulator = 0;
+    if (allStopped()) endShot();
+  }, 16);
+}
+
+function stopBackgroundSimulation() {
+  if (!backgroundSimulationTimer) return;
+  clearInterval(backgroundSimulationTimer);
+  backgroundSimulationTimer = null;
+}
+
+function maybePauseForPlayerTurn() {
+  if (
+    matchState === 'playing' &&
+    state.player === 0 &&
+    (!isWindowFocused || document.hidden)
+  ) {
+    pauseGame();
+  }
+}
+
+function handleWindowBlur() {
+  isWindowFocused = false;
+  if (shouldPauseForHumanTurn()) {
+    pauseGame();
+  } else if (document.hidden) {
+    startBackgroundSimulation();
+  }
+}
+
+function handleWindowFocus() {
+  isWindowFocused = true;
+  stopBackgroundSimulation();
+  resumeGame();
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    if (shouldPauseForHumanTurn()) pauseGame();
+    else startBackgroundSimulation();
+  } else {
+    stopBackgroundSimulation();
+    if (isWindowFocused) resumeGame();
+  }
 }
 
 function activeObjectBalls() {
@@ -1573,6 +1661,7 @@ function endShot() {
     if (state.phase === 'ballinhand' && state.player === 1) scheduleAIBallInHand();
     if (state.phase === 'aim' && state.player === 1) scheduleAITurn();
   }
+  maybePauseForPlayerTurn();
 }
 
 function gameOver(winner) {
@@ -2141,13 +2230,6 @@ function traceCurvePath(
 
 function findJumpTarget(dir, forcedTarget = null, locked = false) {
   const candidates = [];
-  let pocketLimit = Infinity;
-  for (const pocket of POCKETS) {
-    pocketLimit = Math.min(
-      pocketLimit,
-      firstCircleHit(cueBall, dir, pocket.x, pocket.y, pocket.r)
-    );
-  }
 
   for (const ball of balls) {
     if (ball.pocketed || ball === cueBall) continue;
@@ -2155,7 +2237,6 @@ function findJumpTarget(dir, forcedTarget = null, locked = false) {
     const relY = ball.y - cueBall.y;
     const along = relX * dir.x + relY * dir.y;
     if (along <= 2 * R) continue;
-    if (along - 2 * R >= pocketLimit) continue;
     const perpendicular = Math.abs(relX * dir.y - relY * dir.x);
     if (perpendicular > 2 * R * (locked ? 0.995 : 0.96)) continue;
     candidates.push({ ball, along });
@@ -2890,7 +2971,7 @@ function render() {
 let lastTime = performance.now();
 
 function loop(now) {
-  if (isPagePaused) {
+  if (isPagePaused || backgroundSimulationTimer) {
     lastTime = now;
     requestAnimationFrame(loop);
     return;
@@ -3103,12 +3184,9 @@ window.addEventListener('pointerup', e => {
 
 canvas.addEventListener('pointercancel', () => cancelShotDrag());
 window.addEventListener('blur', () => cancelShotDrag());
-window.addEventListener('blur', pauseGame);
-window.addEventListener('focus', resumeGame);
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) pauseGame();
-  else resumeGame();
-});
+window.addEventListener('blur', handleWindowBlur);
+window.addEventListener('focus', handleWindowFocus);
+document.addEventListener('visibilitychange', handleVisibilityChange);
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') cancelShotDrag();
   if (e.key.toLowerCase() === 'r' && !e.repeat) showStartScreen();
