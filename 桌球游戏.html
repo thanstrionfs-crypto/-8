@@ -6,7 +6,7 @@
 <title>彩8桌球 · 8 Ball Pool</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  :root { --table-width: min(99vw, calc((100vh - 76px) * 1.7778)); }
+  :root { --table-width: max(1000px, min(99vw, calc((100vh - 76px) * 1.7778))); }
   html, body {
     height: 100%;
     width: 100%;
@@ -134,7 +134,7 @@
     display: none; align-items: flex-end; justify-content: space-between;
     gap: 8px; pointer-events: none;
   }
-  html.is-mobile #mobileControls.visible { display: flex; }
+  html.touch-controls #mobileControls.visible { display: flex; }
   .aim-joystick, .mobile-shoot, .mobile-power { pointer-events: auto; touch-action: none; }
   .aim-joystick {
     position: relative; width: 32px; height: 32px; border-radius: 50%;
@@ -197,6 +197,23 @@
   .mode-desc { display: block; color: #9db0bf; font-size: 12px; line-height: 1.55; }
   .mode-enter { color: #65e2a7; font-size: 26px; }
   .start-note { margin-top: 22px; color: #5f7283; font-size: 12px; letter-spacing: 1px; }
+  .control-settings {
+    width: min(430px, 86vw); margin: 20px auto 0; padding: 11px 13px;
+    display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px;
+    color: #aebfcd; background: rgba(255,255,255,.035);
+    border: 1px solid rgba(255,255,255,.09); border-radius: 10px;
+  }
+  .control-settings > span { font-size: 12px; font-weight: 700; }
+  .control-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .control-option {
+    min-height: 30px; border: 1px solid rgba(255,255,255,.12);
+    border-radius: 7px; color: #b9c8d4; background: rgba(6,13,18,.42);
+    font-size: 11px; cursor: pointer;
+  }
+  .control-option.active {
+    color: #dffbed; border-color: rgba(98,230,165,.72);
+    background: rgba(43,139,92,.42);
+  }
 
   .dice-wrap { width: min(620px, 90vw); text-align: center; }
   .dice-wrap h2 { font-size: clamp(28px, 5vw, 44px); }
@@ -255,6 +272,10 @@
     .curve-control input { width: 80px; }
   }
 
+  @media (min-width: 761px) {
+    html, body { overflow: auto; }
+  }
+
   @media (max-width: 760px) and (orientation: portrait) {
     html.is-mobile { --table-width: min(100%, calc((100vh - 96px) / 1.7778)); }
     html.is-mobile #tableWrap {
@@ -293,6 +314,13 @@
       </span>
       <span class="mode-enter" aria-hidden="true">›</span>
     </button>
+    <div class="control-settings">
+      <span>操作设置</span>
+      <div class="control-options">
+        <button class="control-option" id="controlTouch" type="button">触控操作</button>
+        <button class="control-option" id="controlMouse" type="button">鼠标操作</button>
+      </div>
+    </div>
     <div class="start-note">先清完本方球，再合法打进 8 号球获胜</div>
   </div>
 </div>
@@ -340,6 +368,10 @@
       <span class="skill-icon">↥</span>
       <span class="skill-name">跳球</span>
     </button>
+    <button class="skill-button" id="skillLock" type="button" hidden>
+      <span class="skill-icon">◎</span>
+      <span class="skill-name" id="skillLockName">锁定</span>
+    </button>
     <button class="skill-button" id="skillCurve" type="button">
       <span class="skill-icon">↝</span>
       <span class="skill-name">弧球</span>
@@ -377,11 +409,22 @@ const isMobileDevice = Boolean(
   (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches)
 );
 document.documentElement.classList.toggle('is-mobile', isMobileDevice);
+let controlMode = isMobileDevice ? 'touch' : 'mouse';
+try {
+  const storedControlMode = localStorage.getItem('poolControlMode');
+  if (storedControlMode === 'touch' || storedControlMode === 'mouse') {
+    controlMode = storedControlMode;
+  }
+} catch (_) {}
+document.documentElement.classList.toggle('touch-controls', controlMode === 'touch');
 if (isMobileDevice) {
   document.addEventListener('gesturestart', event => event.preventDefault(), { passive: false });
   document.addEventListener('gesturechange', event => event.preventDefault(), { passive: false });
   document.addEventListener('gestureend', event => event.preventDefault(), { passive: false });
   document.addEventListener('dblclick', event => event.preventDefault(), { passive: false });
+}
+function useTouchControls() {
+  return controlMode === 'touch';
 }
 
 const R = 11;                      // 球半径
@@ -449,7 +492,13 @@ let shot = null;
 let effects = [];
 let aiTimers = [];
 let matchState = 'menu';
-let skills = { jump: false, arc: false, curveAngle: 35, jumpTarget: null };
+let skills = {
+  jump: false,
+  arc: false,
+  curveAngle: 35,
+  jumpTarget: null,
+  jumpLocked: false
+};
 
 let mouse = { x: W / 2, y: H / 2 };
 let aimAngle = 0;
@@ -459,7 +508,7 @@ let dragStartTime = 0;
 let power = 0;
 let mobilePower = 0;
 let joystickPointerId = null;
-let joystickBaseAim = 0;
+let joystickLastAngle = null;
 let physicsAccumulator = 0;
 
 /* ==================== 创建球 ==================== */
@@ -517,7 +566,13 @@ function newGame(startingPlayer = 0) {
     aiThinking: false,
     combo: [0, 0]
   };
-  skills = { jump: false, arc: false, curveAngle: 35, jumpTarget: null };
+  skills = {
+    jump: false,
+    arc: false,
+    curveAngle: 35,
+    jumpTarget: null,
+    jumpLocked: false
+  };
   cueBall.jumpAnimation = null;
   shot = null;
   draggingCue = false;
@@ -753,7 +808,7 @@ function doShoot(pw) {
   const speed = 240 + pw * (MAX_SPEED - 240);
   const dx = Math.cos(aimAngle), dy = Math.sin(aimAngle);
   const jumpPlan = skills.jump
-    ? findJumpTarget({ x: dx, y: dy }, skills.jumpTarget)
+    ? findJumpTarget({ x: dx, y: dy }, skills.jumpTarget, skills.jumpLocked)
     : { target: null, skipped: [] };
   const jumpBall = jumpPlan.target;
   const jumpBalls = jumpPlan.skipped;
@@ -805,6 +860,7 @@ function doShoot(pw) {
   skills.jump = false;
   skills.arc = false;
   skills.jumpTarget = null;
+  skills.jumpLocked = false;
   updateSkillUI();
   state.phase = 'moving';
   state.msg = `${playerLabel(state.player)}${state.breakPending ? '开球中…' : '击球中…'}`;
@@ -1317,7 +1373,7 @@ function isPortraitMobile() {
 }
 
 function updateMobileControls() {
-  const enabled = canUseSkills();
+  const enabled = canUseSkills() && useTouchControls();
   elMobileControls.classList.toggle('visible', enabled);
   elMobilePower.disabled = !enabled;
   elMobileShoot.disabled = !enabled;
@@ -1329,6 +1385,23 @@ function updateMobileControls() {
     elMobilePower.value = String(Math.round(mobilePower * 100));
     elMobilePowerLabel.textContent = `${Math.round(mobilePower * 100)}%`;
   }
+}
+
+function applyControlMode(mode, persist = true) {
+  if (mode !== 'touch' && mode !== 'mouse') return;
+  controlMode = mode;
+  document.documentElement.classList.toggle('touch-controls', mode === 'touch');
+  elControlTouch.classList.toggle('active', mode === 'touch');
+  elControlMouse.classList.toggle('active', mode === 'mouse');
+  if (mode === 'mouse') {
+    mobilePower = 0;
+    power = 0;
+    resetAimJoystick();
+  }
+  if (persist) {
+    try { localStorage.setItem('poolControlMode', mode); } catch (_) {}
+  }
+  updateHUD();
 }
 
 function updateAimJoystick(event) {
@@ -1344,22 +1417,28 @@ function updateAimJoystick(event) {
     dy = dy / distance * radius;
   }
   elAimKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-  if (Math.hypot(dx, dy) > 3) {
-    const targetAngle = Math.atan2(-dx, dy);
-    let delta = targetAngle - joystickBaseAim;
-    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-    aimAngle = joystickBaseAim + delta * 0.32;
+  if (Math.hypot(dx, dy) > 4) {
+    const stickAngle = Math.atan2(dy, dx);
+    if (joystickLastAngle !== null) {
+      let delta = stickAngle - joystickLastAngle;
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      aimAngle += delta * 0.28;
+      clampAimToLockedJumpTarget();
+    }
+    joystickLastAngle = stickAngle;
+  } else {
+    joystickLastAngle = null;
   }
 }
 
 function startAimJoystick(event) {
-  joystickBaseAim = aimAngle;
+  joystickLastAngle = Math.atan2(Math.cos(aimAngle), -Math.sin(aimAngle));
   elAimKnob.style.transform = 'translate(0, 0)';
-  updateAimJoystick(event);
 }
 
 function resetAimJoystick() {
   joystickPointerId = null;
+  joystickLastAngle = null;
 }
 
 function formatCurveAngle(value) {
@@ -1369,10 +1448,15 @@ function formatCurveAngle(value) {
 function updateSkillUI() {
   const enabled = canUseSkills();
   const curveActive = enabled && skills.arc;
+  const jumpActive = enabled && skills.jump;
   elSkillDock.classList.toggle('hidden', !enabled);
   elSkillJump.disabled = !enabled;
   elSkillCurve.disabled = !enabled;
-  elSkillJump.classList.toggle('active', enabled && skills.jump);
+  elSkillJump.classList.toggle('active', jumpActive);
+  elSkillLock.hidden = !jumpActive;
+  elSkillLock.disabled = !jumpActive;
+  elSkillLock.classList.toggle('active', jumpActive && skills.jumpLocked);
+  elSkillLockName.textContent = skills.jumpLocked ? '已锁' : '锁定';
   elSkillCurve.classList.toggle('active', curveActive);
   elCurveControl.classList.toggle('show', curveActive);
   elCurveAngle.disabled = !curveActive;
@@ -1387,6 +1471,7 @@ function toggleSkill(type) {
   if (type === 'jump') skills.jump = !skills.jump;
   if (type === 'curve') skills.arc = !skills.arc;
   if (!skills.jump) skills.jumpTarget = null;
+  if (!skills.jump) skills.jumpLocked = false;
 
   if (skills.jump && skills.arc) {
     state.msg = `跳球 + 弧球：越过全部阻挡后，目标球转弯 ${formatCurveAngle(skills.curveAngle)}`;
@@ -1398,6 +1483,36 @@ function toggleSkill(type) {
     state.msg = '技能已取消';
   }
 
+  updateHUD();
+}
+
+function toggleJumpLock() {
+  if (!canUseSkills() || !skills.jump) return;
+  cancelShotDrag();
+
+  if (skills.jumpLocked) {
+    skills.jumpLocked = false;
+    state.msg = '跳球目标已解锁，可自由调整虚线';
+    updateHUD();
+    return;
+  }
+
+  if (!skills.jumpTarget || skills.jumpTarget.pocketed) {
+    const dir = { x: Math.cos(aimAngle), y: Math.sin(aimAngle) };
+    skills.jumpTarget = findJumpTarget(dir).target;
+  }
+  if (!skills.jumpTarget) {
+    state.msg = '当前方向没有可锁定的跳球目标';
+    updateHUD();
+    return;
+  }
+
+  skills.jumpLocked = true;
+  aimAngle = Math.atan2(
+    skills.jumpTarget.y - cueBall.y,
+    skills.jumpTarget.x - cueBall.x
+  );
+  state.msg = `目标已锁定：${skills.jumpTarget.num} 号球，可小范围调整虚线`;
   updateHUD();
 }
 
@@ -1690,7 +1805,7 @@ function traceCurvePath(
   };
 }
 
-function findJumpTarget(dir, forcedTarget = null) {
+function findJumpTarget(dir, forcedTarget = null, locked = false) {
   const candidates = [];
   let pocketLimit = Infinity;
   for (const pocket of POCKETS) {
@@ -1708,7 +1823,7 @@ function findJumpTarget(dir, forcedTarget = null) {
     if (along <= 2 * R) continue;
     if (along - 2 * R >= pocketLimit) continue;
     const perpendicular = Math.abs(relX * dir.y - relY * dir.x);
-    if (perpendicular > 2 * R * 0.96) continue;
+    if (perpendicular > 2 * R * (locked ? 0.995 : 0.96)) continue;
     candidates.push({ ball, along });
   }
 
@@ -1730,6 +1845,23 @@ function findJumpTarget(dir, forcedTarget = null) {
   const target = candidates[0].ball;
   const skipped = candidates.slice(1).map(item => item.ball);
   return { target, skipped };
+}
+
+function clampAimToLockedJumpTarget() {
+  const target = skills.jumpTarget;
+  if (!skills.jump || !skills.jumpLocked || !target || target.pocketed) return;
+
+  const centerAngle = Math.atan2(target.y - cueBall.y, target.x - cueBall.x);
+  const distance = Math.hypot(target.x - cueBall.x, target.y - cueBall.y);
+  if (distance <= 2 * R) {
+    aimAngle = centerAngle;
+    return;
+  }
+
+  const halfWindow = Math.asin(Math.min(0.995, 2 * R * 0.94 / distance));
+  let difference = aimAngle - centerAngle;
+  difference = Math.atan2(Math.sin(difference), Math.cos(difference));
+  aimAngle = centerAngle + clamp(difference, -halfWindow, halfWindow);
 }
 
 function sampleJumpPath(startX, startY, endX, endY, height, segments = 28) {
@@ -1762,7 +1894,7 @@ function computeAim() {
 
   hit = raycast(cueBall, dir, predictionIgnore);
   if (skills.jump && hit.ball) {
-    const jumpPlan = findJumpTarget(dir, skills.jumpTarget);
+    const jumpPlan = findJumpTarget(dir, skills.jumpTarget, skills.jumpLocked);
     if (jumpPlan.target) {
       jumpBall = jumpPlan.target;
       jumpBalls = jumpPlan.skipped;
@@ -2194,7 +2326,7 @@ function drawCue() {
 }
 
 function drawPowerBar() {
-  if ((!draggingCue && (!isPortraitMobile() || mobilePower <= 0)) || state.phase !== 'aim') return;
+  if ((!draggingCue && (!useTouchControls() || mobilePower <= 0)) || state.phase !== 'aim') return;
 
   const bw = 190, bh = 11;
   const bx = W / 2 - bw / 2;
@@ -2488,6 +2620,7 @@ function updateAimAngle() {
   const dx = mouse.x - cueBall.x;
   const dy = mouse.y - cueBall.y;
   if (Math.hypot(dx, dy) > 2) aimAngle = Math.atan2(dy, dx);
+  clampAimToLockedJumpTarget();
 }
 
 function setDragging(active) {
@@ -2577,7 +2710,7 @@ canvas.addEventListener('pointerdown', e => {
 
   if (state.phase === 'aim') {
     if (selectJumpTargetAt(p)) return;
-    if (isPortraitMobile()) return;
+    if (useTouchControls()) return;
     updateAimAngle();
     setDragging(true);
     dragStart = { x: p.x, y: p.y };
@@ -2623,6 +2756,8 @@ const elAiDie = document.getElementById('aiDie');
 const elDiceResult = document.getElementById('diceResult');
 const elSkillDock = document.getElementById('skillDock');
 const elSkillJump = document.getElementById('skillJump');
+const elSkillLock = document.getElementById('skillLock');
+const elSkillLockName = document.getElementById('skillLockName');
 const elSkillCurve = document.getElementById('skillCurve');
 const elCurveControl = document.getElementById('curveControl');
 const elCurveAngle = document.getElementById('curveAngle');
@@ -2633,6 +2768,8 @@ const elAimKnob = document.getElementById('aimKnob');
 const elMobilePower = document.getElementById('mobilePower');
 const elMobilePowerLabel = document.getElementById('mobilePowerLabel');
 const elMobileShoot = document.getElementById('mobileShoot');
+const elControlTouch = document.getElementById('controlTouch');
+const elControlMouse = document.getElementById('controlMouse');
 
 function updateHUD() {
   elMsg.textContent = state.msg;
@@ -2655,7 +2792,10 @@ function updateHUD() {
 
 /* ==================== 启动 ==================== */
 elModeEight.addEventListener('click', beginDiceRoll);
+elControlTouch.addEventListener('click', () => applyControlMode('touch'));
+elControlMouse.addEventListener('click', () => applyControlMode('mouse'));
 elSkillJump.addEventListener('click', () => toggleSkill('jump'));
+elSkillLock.addEventListener('click', toggleJumpLock);
 elSkillCurve.addEventListener('click', () => toggleSkill('curve'));
 elCurveAngle.addEventListener('input', e => {
   skills.curveAngle = Number(e.target.value);
@@ -2698,6 +2838,7 @@ elMobileShoot.addEventListener('click', () => {
 drawDie(elYourDie, 1);
 drawDie(elAiDie, 1);
 showStartScreen();
+applyControlMode(controlMode, false);
 requestAnimationFrame(loop);
 
 })();
