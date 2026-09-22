@@ -614,6 +614,7 @@ let isPagePaused = false;
 let pausedDice = false;
 let isWindowFocused = document.hasFocus();
 let backgroundSimulationTimer = null;
+let lastLoopError = '';
 let skills = {
   jump: false,
   arc: false,
@@ -1452,6 +1453,15 @@ function handleVisibilityChange() {
   } else {
     stopBackgroundSimulation();
     if (isWindowFocused) resumeGame();
+  }
+}
+
+function recoverGameState() {
+  if (backgroundSimulationTimer && !document.hidden) {
+    stopBackgroundSimulation();
+  }
+  if (isPagePaused && !document.hidden && isWindowFocused) {
+    resumeGame();
   }
 }
 
@@ -3101,47 +3111,53 @@ function render() {
 let lastTime = performance.now();
 
 function loop(now) {
+  requestAnimationFrame(loop);
+  recoverGameState();
   if (isPagePaused || backgroundSimulationTimer) {
     lastTime = now;
-    requestAnimationFrame(loop);
     return;
   }
-  const dt = Math.min(Math.max((now - lastTime) / 1000, 0), MAX_FRAME_DT);
-  lastTime = now;
-  updateEffects(dt);
+  try {
+    const dt = Math.min(Math.max((now - lastTime) / 1000, 0), MAX_FRAME_DT);
+    lastTime = now;
+    updateEffects(dt);
 
-  if (state.phase === 'moving') {
-    physicsAccumulator += dt;
-    let steps = 0;
+    if (state.phase === 'moving') {
+      physicsAccumulator += dt;
+      let steps = 0;
 
-    while (physicsAccumulator >= PHYSICS_STEP && steps < MAX_PHYSICS_STEPS) {
-      physicsStep(PHYSICS_STEP);
-      physicsAccumulator -= PHYSICS_STEP;
-      steps++;
+      while (physicsAccumulator >= PHYSICS_STEP && steps < MAX_PHYSICS_STEPS) {
+        physicsStep(PHYSICS_STEP);
+        physicsAccumulator -= PHYSICS_STEP;
+        steps++;
+      }
+
+      if (steps === MAX_PHYSICS_STEPS) physicsAccumulator = 0;
+      if (allStopped()) endShot();
+    } else {
+      physicsAccumulator = 0;
     }
 
-    if (steps === MAX_PHYSICS_STEPS) physicsAccumulator = 0;
-    if (allStopped()) endShot();
-  } else {
+    if (state.phase === 'ballinhand' && state.player === 0 && matchState === 'playing') {
+      const previewX = clamp(mouse.x, TL + R, TR - R);
+      const previewY = clamp(mouse.y, TT + R, TB - R);
+      if (canPlaceCue(previewX, previewY)) {
+        cueBall.x = previewX;
+        cueBall.y = previewY;
+        cueBall.pocketed = false;
+      }
+    }
+
+    if (draggingCue && state.phase === 'aim' && state.player === 0) {
+      updateDragPower(mouse);
+    }
+
+    render();
+  } catch (error) {
+    lastLoopError = error && error.message ? error.message : String(error);
     physicsAccumulator = 0;
+    lastTime = now;
   }
-
-  if (state.phase === 'ballinhand' && state.player === 0 && matchState === 'playing') {
-    const previewX = clamp(mouse.x, TL + R, TR - R);
-    const previewY = clamp(mouse.y, TT + R, TB - R);
-    if (canPlaceCue(previewX, previewY)) {
-      cueBall.x = previewX;
-      cueBall.y = previewY;
-      cueBall.pocketed = false;
-    }
-  }
-
-  if (draggingCue && state.phase === 'aim' && state.player === 0) {
-    updateDragPower(mouse);
-  }
-
-  render();
-  requestAnimationFrame(loop);
 }
 
 /* ==================== 交互 ==================== */
@@ -3403,7 +3419,11 @@ elModePractice.addEventListener('click', startPracticeMode);
 elModeRace4.addEventListener('click', startRace4Mode);
 elChooseFirst.addEventListener('click', () => chooseBreakForHuman(true));
 elChooseSecond.addEventListener('click', () => chooseBreakForHuman(false));
-document.addEventListener('pointerdown', ensureAudioContext, { passive: true });
+document.addEventListener('pointerdown', () => {
+  isWindowFocused = true;
+  recoverGameState();
+  ensureAudioContext();
+}, { passive: true, capture: true });
 elSettingsButton.addEventListener('click', () => {
   elSettingsPanel.hidden = false;
 });
