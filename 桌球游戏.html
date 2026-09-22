@@ -498,6 +498,10 @@
       <span class="skill-icon">↥</span>
       <span class="skill-name">跳球</span>
     </button>
+    <button class="skill-button" id="skillL" type="button">
+      <span class="skill-icon">L</span>
+      <span class="skill-name">L球</span>
+    </button>
     <button class="skill-button" id="skillLock" type="button" hidden>
       <span class="skill-icon">◎</span>
       <span class="skill-name" id="skillLockName">锁定</span>
@@ -646,6 +650,7 @@ let backgroundSimulationTimer = null;
 let lastLoopError = '';
 let skills = {
   jump: false,
+  l: false,
   arc: false,
   curveAngle: 35,
   jumpTarget: null,
@@ -725,6 +730,7 @@ function newGame(startingPlayer = 0) {
   };
   skills = {
     jump: false,
+    l: false,
     arc: false,
     curveAngle: 35,
     jumpTarget: null,
@@ -827,6 +833,7 @@ function setupPracticeStage(stage) {
   physicsAccumulator = 0;
   skills = {
     jump: false,
+    l: false,
     arc: false,
     curveAngle: 35,
     jumpTarget: null,
@@ -1078,6 +1085,23 @@ function resolveBallCollisions() {
               shot.arcApplied = true;
             }
           }
+          if (
+            shot &&
+            shot.lTarget &&
+            !shot.lApplied &&
+            shot.lDirection &&
+            (a === cueBall || b === cueBall)
+          ) {
+            const lBall = a === shot.lTarget ? a : b === shot.lTarget ? b : null;
+            if (lBall) {
+              const lSpeed = Math.hypot(lBall.vx, lBall.vy);
+              if (lSpeed > 1) {
+                lBall.vx = shot.lDirection.x * lSpeed;
+                lBall.vy = shot.lDirection.y * lSpeed;
+                shot.lApplied = true;
+              }
+            }
+          }
         } else if (overlap > 0.02) {
           const separationSpeed = Math.min(72, overlap * 18);
           const neededSpeed = Math.max(0, separationSpeed - normalSpeed);
@@ -1185,6 +1209,10 @@ function doShoot(pw) {
   const activeHit = raycast(cueBall, { x: dx, y: dy }, [cueBall, ...jumpBalls]);
   const arcTarget = skills.arc ? activeHit.ball : null;
   const arcAngle = skills.arc ? skills.curveAngle : 0;
+  const lTarget = skills.l ? activeHit.ball : null;
+  const lDirection = lTarget
+    ? chooseLShotDirection({ x: dx, y: dy }, lTarget)
+    : null;
 
   state.aiThinking = false;
   for (const ball of balls) {
@@ -1224,10 +1252,14 @@ function doShoot(pw) {
     arcTarget,
     arcAngle,
     arcApplied: false,
+    lTarget,
+    lDirection,
+    lApplied: false,
     groupClearedAtShotStart: g ? groupCleared(g) : false
   };
 
   skills.jump = false;
+  skills.l = false;
   skills.arc = false;
   skills.jumpTarget = null;
   skills.jumpLocked = false;
@@ -2056,8 +2088,10 @@ function updateSkillUI() {
   const jumpActive = enabled && skills.jump;
   elSkillDock.classList.toggle('hidden', !enabled);
   elSkillJump.disabled = !enabled;
+  elSkillL.disabled = !enabled;
   elSkillCurve.disabled = !enabled;
   elSkillJump.classList.toggle('active', jumpActive);
+  elSkillL.classList.toggle('active', enabled && skills.l);
   elSkillLock.hidden = !jumpActive || !skills.jumpLocked;
   elSkillLock.disabled = !jumpActive || !skills.jumpLocked;
   elSkillLock.classList.toggle('active', jumpActive && skills.jumpLocked);
@@ -2074,16 +2108,25 @@ function toggleSkill(type) {
   if (!canUseSkills()) return;
   cancelShotDrag();
   if (type === 'jump') skills.jump = !skills.jump;
+  if (type === 'l') skills.l = !skills.l;
   if (type === 'curve') skills.arc = !skills.arc;
+  if (skills.l && skills.arc) {
+    if (type === 'l') skills.arc = false;
+    else if (type === 'curve') skills.l = false;
+  }
   if (type === 'jump') {
     skills.jumpTarget = null;
     skills.jumpLocked = false;
   }
 
-  if (skills.jump && skills.arc) {
+  if (skills.jump && skills.l) {
+    state.msg = '跳球 + L球：越过阻挡后，目标球轨迹转 90°';
+  } else if (skills.jump && skills.arc) {
     state.msg = `跳球 + 弧球：越过全部阻挡后，目标球转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else if (skills.jump) {
     state.msg = '跳球已启用：请直接点选要跳到的目标球';
+  } else if (skills.l) {
+    state.msg = 'L球已启用：目标球撞击后转 90°';
   } else if (skills.arc) {
     state.msg = `弧球已启用：目标球将转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else {
@@ -2433,6 +2476,26 @@ function findJumpTarget(dir, forcedTarget = null, locked = false) {
   return { target, skipped };
 }
 
+function chooseLShotDirection(incomingDir, target) {
+  const horizontalIncoming = Math.abs(incomingDir.x) >= Math.abs(incomingDir.y);
+  const candidates = horizontalIncoming
+    ? [{ x: 0, y: 1 }, { x: 0, y: -1 }]
+    : [{ x: 1, y: 0 }, { x: -1, y: 0 }];
+
+  const scorePath = path => {
+    if (path.pocket) return 3200 + path.distance;
+    if (path.ball) return path.distance * 1.8 + path.clearance * 4;
+    return 1000 + path.distance + Math.min(path.clearance, 100) * 4;
+  };
+
+  return candidates
+    .map(direction => ({
+      direction,
+      score: scorePath(traceBallPath(target, direction, [target], 4))
+    }))
+    .sort((a, b) => b.score - a.score)[0].direction;
+}
+
 function clampAimToLockedJumpTarget() {
   const target = skills.jumpTarget;
   if (!skills.jump || !skills.jumpLocked || !target || target.pocketed) return;
@@ -2551,6 +2614,9 @@ function computeAim() {
         ARC_TURN_DISTANCE,
         angle / ARC_TURN_DISTANCE
       );
+    } else if (skills.l) {
+      out.lDirection = chooseLShotDirection(dir, target);
+      out.targetPath = traceBallPath(target, out.lDirection, [target], 4);
     } else {
       out.targetPath = traceBallPath(target, objectDir, [target], 4);
     }
@@ -3399,6 +3465,7 @@ const elChooseFirst = document.getElementById('chooseFirst');
 const elChooseSecond = document.getElementById('chooseSecond');
 const elSkillDock = document.getElementById('skillDock');
 const elSkillJump = document.getElementById('skillJump');
+const elSkillL = document.getElementById('skillL');
 const elSkillLock = document.getElementById('skillLock');
 const elSkillLockName = document.getElementById('skillLockName');
 const elSkillCurve = document.getElementById('skillCurve');
@@ -3477,6 +3544,7 @@ elSkinMonochrome.addEventListener('click', () => applyButtonSkin('monochrome'));
 elControlTouch.addEventListener('click', () => applyControlMode('touch'));
 elControlMouse.addEventListener('click', () => applyControlMode('mouse'));
 elSkillJump.addEventListener('click', () => toggleSkill('jump'));
+elSkillL.addEventListener('click', () => toggleSkill('l'));
 elSkillLock.addEventListener('click', toggleJumpLock);
 elSkillCurve.addEventListener('click', () => toggleSkill('curve'));
 elCurveAngle.addEventListener('input', e => {
