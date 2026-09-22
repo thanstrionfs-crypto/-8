@@ -193,6 +193,11 @@
     border-color: rgba(100,174,224,.42);
   }
   .practice-card .mode-enter { color: #83c7f4; }
+  .race-card {
+    background: linear-gradient(135deg, rgba(128,86,33,.34), rgba(28,20,12,.92));
+    border-color: rgba(229,174,77,.46);
+  }
+  .race-card .mode-enter { color: #f0c56b; }
   .mode-balls { position: relative; width: 64px; height: 54px; }
   .mode-ball {
     position: absolute; width: 34px; height: 34px; border-radius: 50%;
@@ -273,6 +278,23 @@
   .dice-vs { color: #5d7184; font-weight: 900; letter-spacing: 1px; }
   .dice-result { min-height: 42px; margin-top: 22px; font-size: 18px; color: #c8d5df; }
   .dice-result strong { color: #65e2a7; }
+  .break-choice-wrap { width: min(560px, 90vw); text-align: center; }
+  .break-choice-wrap h2 { font-size: clamp(30px, 5vw, 46px); }
+  .break-choice-subtitle { margin-top: 10px; color: #8fa3b4; font-size: 14px; }
+  .break-choice-actions {
+    margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .break-choice-button {
+    min-height: 58px; border-radius: 12px; cursor: pointer;
+    color: #e9f3ec; background: rgba(23,67,48,.58);
+    border: 1px solid rgba(98,230,165,.46);
+    font-size: 16px; font-weight: 800;
+  }
+  .break-choice-button.second {
+    background: rgba(46,66,86,.62);
+    border-color: rgba(122,184,236,.44);
+  }
+  .break-choice-result { min-height: 24px; margin-top: 18px; color: #b7c8d5; }
   #orientationHint {
     position: fixed; inset: 0; z-index: 40; display: none;
     place-items: center; padding: 24px; text-align: center;
@@ -361,6 +383,17 @@
       </span>
       <span class="mode-enter" aria-hidden="true">›</span>
     </button>
+    <button class="mode-card race-card" id="modeRace4" type="button">
+      <span class="mode-balls">
+        <span class="mode-ball eight">4</span>
+        <span class="mode-ball stripe">8</span>
+      </span>
+      <span>
+        <span class="mode-title">抢4模式</span>
+        <span class="mode-desc">先赢 4 局获胜 · 每局赢家选择先手或后手</span>
+      </span>
+      <span class="mode-enter" aria-hidden="true">›</span>
+    </button>
     <div class="start-note">先清完本方球，再合法打进 8 号球获胜</div>
   </div>
   <button class="settings-trigger" id="settingsButton" type="button">设置</button>
@@ -403,6 +436,18 @@
       </div>
     </div>
     <div class="dice-result" id="diceResult">准备投掷…</div>
+  </div>
+</div>
+
+<div class="screen" id="breakChoiceScreen">
+  <div class="break-choice-wrap">
+    <h2 id="breakChoiceTitle">选择先手或后手</h2>
+    <p class="break-choice-subtitle" id="breakChoiceSubtitle">先手负责开球，后手等待对方开球</p>
+    <div class="break-choice-actions">
+      <button class="break-choice-button" id="chooseFirst" type="button">先手 · 我来开球</button>
+      <button class="break-choice-button second" id="chooseSecond" type="button">后手 · 对方开球</button>
+    </div>
+    <div class="break-choice-result" id="breakChoiceResult"></div>
   </div>
 </div>
 
@@ -517,7 +562,7 @@ const PC_DRAG_RESPONSE_DISTANCE = 95;
 const PC_DRAG_DEAD_ZONE = 3;
 const CURVE_CURVATURE = 0.00165;
 const CURVE_MAX_DISTANCE = 1050;
-const CURVE_PATH_STEP = 2;
+const CURVE_PATH_STEP = 1;
 const ARC_TURN_DISTANCE = 145;
 
 const POCKETS = [
@@ -562,6 +607,9 @@ let aiTimers = [];
 let matchState = 'menu';
 let gameMode = 'eight-ball';
 let practiceStage = 1;
+let raceScores = [0, 0];
+let breakChoiceContext = 'opening';
+let breakChoiceWinner = 0;
 let isPagePaused = false;
 let pausedDice = false;
 let isWindowFocused = document.hasFocus();
@@ -762,6 +810,7 @@ function setupPracticeStage(stage) {
 
 function startPracticeMode() {
   elSettingsPanel.hidden = true;
+  elBreakChoiceScreen.classList.remove('visible');
   elStartScreen.classList.remove('visible');
   elDiceScreen.classList.remove('visible');
   gameMode = 'practice';
@@ -1666,6 +1715,10 @@ function endShot() {
 }
 
 function gameOver(winner) {
+  if (gameMode === 'race4') {
+    finishRaceRack(winner);
+    return;
+  }
   clearAITimers();
   state.phase = 'over';
   state.winner = winner;
@@ -1674,6 +1727,24 @@ function gameOver(winner) {
   cueBall.jumpAnimation = null;
   shot = null;
   updateHUD();
+}
+
+function finishRaceRack(winner) {
+  clearAITimers();
+  raceScores[winner] += 1;
+  state.winner = winner;
+  state.phase = raceScores[winner] >= 4 ? 'over' : 'rack-over';
+  state.msg = `${winner === 0 ? '你' : '电脑 AI'} 赢下本局 · 当前 ${raceScores[0]} : ${raceScores[1]}`;
+  shot = null;
+  updateHUD();
+
+  if (raceScores[winner] >= 4) {
+    state.msg = `抢4获胜：${winner === 0 ? '你' : '电脑 AI'} ${raceScores[0]} : ${raceScores[1]}`;
+    updateHUD();
+    return;
+  }
+
+  queueAITimer(() => offerBreakChoice(winner, 'race'), 900);
 }
 
 /* ==================== 开始界面与先手骰子 ==================== */
@@ -1702,9 +1773,12 @@ function drawDie(element, value, rolling = false) {
 function showStartScreen() {
   elSettingsPanel.hidden = true;
   elSkinList.hidden = true;
+  elBreakChoiceScreen.classList.remove('visible');
+  elBreakChoiceScreen.classList.remove('visible');
   diceSequence++;
   clearAITimers();
   gameMode = 'eight-ball';
+  raceScores = [0, 0];
   document.documentElement.classList.remove('practice-mode');
   matchState = 'menu';
   newGame(0);
@@ -1717,7 +1791,6 @@ function showStartScreen() {
 
 function beginDiceRoll() {
   if (matchState !== 'menu') return;
-  gameMode = 'eight-ball';
   document.documentElement.classList.remove('practice-mode');
   elSettingsPanel.hidden = true;
   elSkinList.hidden = true;
@@ -1728,6 +1801,13 @@ function beginDiceRoll() {
   elStartScreen.classList.remove('visible');
   elDiceScreen.classList.add('visible');
   rollDiceRound();
+}
+
+function startRace4Mode() {
+  if (matchState !== 'menu') return;
+  gameMode = 'race4';
+  raceScores = [0, 0];
+  beginDiceRoll();
 }
 
 function rollDiceRound() {
@@ -1762,25 +1842,72 @@ function rollDiceRound() {
     }
 
     const winner = playerValue > aiValue ? 0 : 1;
-    elDiceResult.innerHTML = `${playerValue} : ${aiValue} · <strong>${winner === 0 ? '你' : '电脑 AI'}</strong> 先开球`;
+    elDiceResult.innerHTML = `${playerValue} : ${aiValue} · <strong>${winner === 0 ? '你' : '电脑 AI'}</strong> 获得先手选择权`;
     setTimeout(() => {
-      if (sequence === diceSequence) startMatch(winner);
+      if (sequence === diceSequence) offerBreakChoice(winner, 'opening');
     }, 1050);
   }, 900);
 }
 
-function startMatch(firstPlayer) {
+function offerBreakChoice(winner, context = 'opening') {
   clearAITimers();
-  matchState = 'playing';
-  state.player = firstPlayer;
-  state.phase = 'aim';
-  state.breakPending = true;
-  state.winner = null;
-  state.msg = `${playerLabel(firstPlayer)} 开球`;
+  breakChoiceWinner = winner;
+  breakChoiceContext = context;
+  matchState = 'choosing';
   elDiceScreen.classList.remove('visible');
+  elBreakChoiceScreen.classList.add('visible');
+  elBreakChoiceTitle.textContent = `${winner === 0 ? '你' : '电脑 AI'} 获得选择权`;
+  elBreakChoiceSubtitle.textContent = context === 'race'
+    ? '赢家可以决定本局先手或后手'
+    : '先手负责开球，后手等待对方开球';
+  elBreakChoiceResult.textContent = winner === 0
+    ? '请选择先手或后手'
+    : '电脑 AI 正在选择…';
+  elChooseFirst.disabled = winner !== 0;
+  elChooseSecond.disabled = winner !== 0;
+  state.msg = `${winner === 0 ? '你' : '电脑 AI'} 正在选择先手`;
+  updateHUD();
+
+  if (winner === 1) {
+    queueAITimer(() => {
+      const chooseFirst = Math.random() < 0.66;
+      const breaker = chooseFirst ? 1 : 0;
+      elBreakChoiceResult.textContent = chooseFirst
+        ? '电脑 AI 选择了先手，将由 AI 开球'
+        : '电脑 AI 选择了后手，将由你开球';
+      queueAITimer(() => startRackWithBreaker(breaker), 650);
+    }, 700);
+  }
+}
+
+function chooseBreakForHuman(wantsFirst) {
+  if (matchState !== 'choosing' || breakChoiceWinner !== 0) return;
+  clearAITimers();
+  const breaker = wantsFirst ? 0 : 1;
+  elChooseFirst.disabled = true;
+  elChooseSecond.disabled = true;
+  elBreakChoiceResult.textContent = wantsFirst
+    ? '你选择了先手，将由你开球'
+    : '你选择了后手，将由电脑 AI 开球';
+  queueAITimer(() => startRackWithBreaker(breaker), 550);
+}
+
+function startRackWithBreaker(firstPlayer) {
+  clearAITimers();
+  elBreakChoiceScreen.classList.remove('visible');
+  elDiceScreen.classList.remove('visible');
+  matchState = 'playing';
+  newGame(firstPlayer);
+  if (gameMode === 'race4') {
+    state.msg = `第 ${raceScores[0] + raceScores[1] + 1} 局 · ${playerLabel(firstPlayer)} 开球`;
+  }
   updateHUD();
 
   if (firstPlayer === 1) scheduleAITurn();
+}
+
+function startMatch(firstPlayer) {
+  startRackWithBreaker(firstPlayer);
 }
 
 function canUseSkills() {
@@ -2877,19 +3004,21 @@ function drawGameOver() {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffd83c';
   ctx.font = 'bold 54px system-ui, sans-serif';
-  ctx.fillText(
-    gameMode === 'practice' ? '练习完成' : `${state.winner === 0 ? '你' : '电脑 AI'} 获胜`,
-    W / 2,
-    H / 2 - 22
-  );
+  const heading = gameMode === 'practice'
+    ? '练习完成'
+    : gameMode === 'race4'
+      ? `${state.winner === 0 ? '你' : '电脑 AI'} 抢4获胜`
+      : `${state.winner === 0 ? '你' : '电脑 AI'} 获胜`;
+  ctx.fillText(heading, W / 2, H / 2 - 22);
 
   ctx.fillStyle = 'rgba(255,255,255,.75)';
   ctx.font = '18px system-ui, sans-serif';
-  ctx.fillText(
-    gameMode === 'practice' ? '点击画面重新开始练习' : '点击画面返回开始界面',
-    W / 2,
-    H / 2 + 44
-  );
+  const subtitle = gameMode === 'practice'
+    ? '点击画面重新开始练习'
+    : gameMode === 'race4'
+      ? `最终比分 ${raceScores[0]} : ${raceScores[1]} · 点击返回开始界面`
+      : '点击画面返回开始界面';
+  ctx.fillText(subtitle, W / 2, H / 2 + 44);
   ctx.restore();
 }
 
@@ -3209,9 +3338,16 @@ const elStartScreen = document.getElementById('startScreen');
 const elDiceScreen = document.getElementById('diceScreen');
 const elModeEight = document.getElementById('modeEight');
 const elModePractice = document.getElementById('modePractice');
+const elModeRace4 = document.getElementById('modeRace4');
 const elYourDie = document.getElementById('yourDie');
 const elAiDie = document.getElementById('aiDie');
 const elDiceResult = document.getElementById('diceResult');
+const elBreakChoiceScreen = document.getElementById('breakChoiceScreen');
+const elBreakChoiceTitle = document.getElementById('breakChoiceTitle');
+const elBreakChoiceSubtitle = document.getElementById('breakChoiceSubtitle');
+const elBreakChoiceResult = document.getElementById('breakChoiceResult');
+const elChooseFirst = document.getElementById('chooseFirst');
+const elChooseSecond = document.getElementById('chooseSecond');
 const elSkillDock = document.getElementById('skillDock');
 const elSkillJump = document.getElementById('skillJump');
 const elSkillLock = document.getElementById('skillLock');
@@ -3237,7 +3373,9 @@ const elSkinClassic = document.getElementById('skinClassic');
 const elSkinMonochrome = document.getElementById('skinMonochrome');
 
 function updateHUD() {
-  elMsg.textContent = state.msg;
+  elMsg.textContent = gameMode === 'race4'
+    ? `抢4 ${raceScores[0]} : ${raceScores[1]} · ${state.msg}`
+    : state.msg;
   elP1.classList.toggle('active', matchState === 'playing' && state.player === 0 && state.phase !== 'over');
   elP2.classList.toggle('active', matchState === 'playing' && state.player === 1 && state.phase !== 'over');
 
@@ -3256,8 +3394,15 @@ function updateHUD() {
 }
 
 /* ==================== 启动 ==================== */
-elModeEight.addEventListener('click', beginDiceRoll);
+elModeEight.addEventListener('click', () => {
+  gameMode = 'eight-ball';
+  raceScores = [0, 0];
+  beginDiceRoll();
+});
 elModePractice.addEventListener('click', startPracticeMode);
+elModeRace4.addEventListener('click', startRace4Mode);
+elChooseFirst.addEventListener('click', () => chooseBreakForHuman(true));
+elChooseSecond.addEventListener('click', () => chooseBreakForHuman(false));
 document.addEventListener('pointerdown', ensureAudioContext, { passive: true });
 elSettingsButton.addEventListener('click', () => {
   elSettingsPanel.hidden = false;
