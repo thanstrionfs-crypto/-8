@@ -1698,7 +1698,11 @@ function endShot() {
 
   // 非开球的 8 号球落袋，按是否完成本方球组和合法首碰判胜负。
   if (s.pocketed.includes(8)) {
-    const legal = myGroup && s.groupClearedAtShotStart && s.firstHit === 8 && !foul;
+    const onlyCueScratchFoul = foul && reason === '母球落袋';
+    const legal = myGroup &&
+      s.groupClearedAtShotStart &&
+      s.firstHit === 8 &&
+      (!foul || onlyCueScratchFoul);
     gameOver(legal ? me : 1 - me);
     return;
   }
