@@ -100,6 +100,25 @@
     display: flex; justify-content: flex-end; align-items: center; gap: 4px;
     transition: opacity .2s, visibility .2s;
   }
+  #raceScoreBoard {
+    position: absolute; z-index: 8; top: 5px; left: 50%;
+    transform: translateX(-50%); display: none;
+    align-items: center; gap: 8px; pointer-events: none;
+    padding: 1px 12px; border-radius: 9px;
+    color: #f5e2ac; background: rgba(8,14,18,.22);
+    border: 1px solid rgba(240,197,107,.22);
+    text-shadow: 0 2px 8px rgba(0,0,0,.72);
+  }
+  #raceScoreBoard.visible { display: flex; }
+  #raceScoreBoard .score-number {
+    min-width: 34px; font-size: 36px; line-height: 1;
+    font-weight: 900; text-align: center; color: #fff2c9;
+  }
+  #raceScoreBoard .score-separator { font-size: 27px; color: #d6ad58; font-weight: 900; }
+  #raceScoreBoard .score-label {
+    font-size: 10px; font-weight: 800; letter-spacing: 1px;
+    color: #e3bd6f; align-self: flex-end; margin-bottom: 2px;
+  }
   #skillDock.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
   .skill-button {
     width: 64px; min-height: 22px; padding: 2px 5px;
@@ -328,6 +347,10 @@
     .skill-icon { font-size: 12px; }
     .curve-control { width: 120px; min-height: 21px; padding: 2px 5px; }
     .curve-control input { width: 80px; }
+    #raceScoreBoard { top: 2px; gap: 5px; padding: 0 8px; }
+    #raceScoreBoard .score-number { min-width: 24px; font-size: 26px; }
+    #raceScoreBoard .score-separator { font-size: 20px; }
+    #raceScoreBoard .score-label { font-size: 8px; }
   }
 
   @media (min-width: 761px) {
@@ -489,6 +512,12 @@
     </label>
   </div>
   <canvas id="game"></canvas>
+  <div id="raceScoreBoard" aria-live="polite">
+    <span class="score-number" id="raceScoreP1">0</span>
+    <span class="score-separator">:</span>
+    <span class="score-number" id="raceScoreP2">0</span>
+    <span class="score-label">抢4</span>
+  </div>
   <div id="mobileControls">
     <div class="aim-joystick" id="aimJoystick"><span class="aim-knob" id="aimKnob"></span></div>
     <div class="mobile-power">
@@ -3387,11 +3416,16 @@ const elSkinPicker = document.getElementById('skinPicker');
 const elSkinList = document.getElementById('skinList');
 const elSkinClassic = document.getElementById('skinClassic');
 const elSkinMonochrome = document.getElementById('skinMonochrome');
+const elRaceScoreBoard = document.getElementById('raceScoreBoard');
+const elRaceScoreP1 = document.getElementById('raceScoreP1');
+const elRaceScoreP2 = document.getElementById('raceScoreP2');
 
 function updateHUD() {
-  elMsg.textContent = gameMode === 'race4'
-    ? `抢4 ${raceScores[0]} : ${raceScores[1]} · ${state.msg}`
-    : state.msg;
+  elMsg.textContent = state.msg;
+  const showRaceScore = gameMode === 'race4' && matchState !== 'menu';
+  elRaceScoreBoard.classList.toggle('visible', showRaceScore);
+  elRaceScoreP1.textContent = String(raceScores[0]);
+  elRaceScoreP2.textContent = String(raceScores[1]);
   elP1.classList.toggle('active', matchState === 'playing' && state.player === 0 && state.phase !== 'over');
   elP2.classList.toggle('active', matchState === 'playing' && state.player === 1 && state.phase !== 'over');
 
