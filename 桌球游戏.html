@@ -101,7 +101,7 @@
     transition: opacity .2s, visibility .2s;
   }
   #raceScoreBoard {
-    position: absolute; z-index: 8; top: 5px; left: 50%;
+    position: fixed; z-index: 9; top: 5px; left: 50%;
     transform: translateX(-50%); display: none;
     align-items: center; gap: 8px; pointer-events: none;
     padding: 1px 12px; border-radius: 9px;
@@ -110,6 +110,8 @@
     text-shadow: 0 2px 8px rgba(0,0,0,.72);
   }
   #raceScoreBoard.visible { display: flex; }
+  html.race-mode { --table-width: min(99vw, calc((100vh - 122px) * 1.7778)); }
+  html.race-mode #hud { margin-top: 50px; }
   #raceScoreBoard .score-number {
     min-width: 34px; font-size: 36px; line-height: 1;
     font-weight: 900; text-align: center; color: #fff2c9;
@@ -140,7 +142,7 @@
   .skill-name { font-size: 9px; font-weight: 800; }
   .skill-note { display: none; }
   .curve-control {
-    width: 142px; min-height: 22px; padding: 2px 6px;
+    width: 250px; min-height: 22px; padding: 2px 6px;
     display: none; grid-template-columns: auto 1fr; align-items: center; gap: 7px;
     color: rgba(207,221,231,.88); background: rgba(12,22,28,.22);
     border: 1px solid rgba(98,230,165,.38); border-radius: 10px;
@@ -148,7 +150,7 @@
   }
   .curve-control.show { display: grid; }
   .curve-control span { font-size: 10px; font-weight: 800; color: #62e6a5; white-space: nowrap; }
-  .curve-control input { width: 96px; accent-color: #62e6a5; cursor: pointer; }
+  .curve-control input { width: 200px; accent-color: #62e6a5; cursor: pointer; }
   #mobileControls {
     position: absolute; z-index: 8; left: 4px; right: 4px; bottom: 4px;
     width: auto;
@@ -345,8 +347,8 @@
     }
     .skill-button { width: 58px; min-height: 21px; grid-template-columns: 12px 1fr; padding: 2px 4px; }
     .skill-icon { font-size: 12px; }
-    .curve-control { width: 120px; min-height: 21px; padding: 2px 5px; }
-    .curve-control input { width: 80px; }
+    .curve-control { width: 170px; min-height: 21px; padding: 2px 5px; }
+    .curve-control input { width: 130px; }
     #raceScoreBoard { top: 2px; gap: 5px; padding: 0 8px; }
     #raceScoreBoard .score-number { min-width: 24px; font-size: 26px; }
     #raceScoreBoard .score-separator { font-size: 20px; }
@@ -359,6 +361,7 @@
 
   @media (max-width: 760px) and (orientation: portrait) {
     html.is-mobile { --table-width: min(100%, calc((100vh - 96px) / 1.7778)); }
+    html.is-mobile.race-mode { --table-width: min(100%, calc((100vh - 142px) / 1.7778)); }
     html.is-mobile #tableWrap {
       width: var(--table-width);
       height: calc(var(--table-width) * 1.7778);
@@ -498,9 +501,9 @@
       <span class="skill-icon">↥</span>
       <span class="skill-name">跳球</span>
     </button>
-    <button class="skill-button" id="skillL" type="button">
-      <span class="skill-icon">L</span>
-      <span class="skill-name">L球</span>
+    <button class="skill-button" id="skillWall" type="button">
+      <span class="skill-icon">▥</span>
+      <span class="skill-name">贴墙球</span>
     </button>
     <button class="skill-button" id="skillLock" type="button" hidden>
       <span class="skill-icon">◎</span>
@@ -512,16 +515,10 @@
     </button>
     <label class="curve-control" id="curveControl">
       <span id="curveAngleLabel">35°</span>
-      <input id="curveAngle" type="range" min="-180" max="180" step="0.5" value="35">
+      <input id="curveAngle" type="range" min="-180" max="180" step="0.25" value="35">
     </label>
   </div>
   <canvas id="game"></canvas>
-  <div id="raceScoreBoard" aria-live="polite">
-    <span class="score-number" id="raceScoreP1">0</span>
-    <span class="score-separator">:</span>
-    <span class="score-number" id="raceScoreP2">0</span>
-    <span class="score-label">抢4</span>
-  </div>
   <div id="mobileControls">
     <div class="aim-joystick" id="aimJoystick"><span class="aim-knob" id="aimKnob"></span></div>
     <div class="mobile-power">
@@ -532,6 +529,12 @@
   </div>
 </div>
 <div id="tip">移动鼠标瞄准 · 按住左键朝拉杆方向移动 · 移动越远力度越大 · 松开击球</div>
+<div id="raceScoreBoard" aria-live="polite">
+  <span class="score-number" id="raceScoreP1">0</span>
+  <span class="score-separator">:</span>
+  <span class="score-number" id="raceScoreP2">0</span>
+  <span class="score-label">抢4</span>
+</div>
 <div id="orientationHint"><div><strong>请竖屏使用</strong>手机端已针对竖屏布局优化</div></div>
 
 <script>
@@ -650,7 +653,8 @@ let backgroundSimulationTimer = null;
 let lastLoopError = '';
 let skills = {
   jump: false,
-  l: false,
+  wall: false,
+  wallUsed: false,
   arc: false,
   curveAngle: 35,
   jumpTarget: null,
@@ -683,7 +687,8 @@ function makeBall(num, x, y) {
     curveDistance: 0,
     angle: 0,
     spin: 0,
-    curveRate: CURVE_CURVATURE
+    curveRate: CURVE_CURVATURE,
+    wallHug: null
   };
 }
 
@@ -730,7 +735,8 @@ function newGame(startingPlayer = 0) {
   };
   skills = {
     jump: false,
-    l: false,
+    wall: false,
+    wallUsed: false,
     arc: false,
     curveAngle: 35,
     jumpTarget: null,
@@ -833,7 +839,8 @@ function setupPracticeStage(stage) {
   physicsAccumulator = 0;
   skills = {
     jump: false,
-    l: false,
+    wall: false,
+    wallUsed: false,
     arc: false,
     curveAngle: 35,
     jumpTarget: null,
@@ -955,7 +962,57 @@ function playCushionSound(speed) {
   playAudioTone(95 + strength * 95, 0.06 + strength * 0.04, 0.012 + strength * 0.035, 'sine');
 }
 
+function resolveWallHugCushion(ball) {
+  const plan = ball.wallHug;
+  if (!plan) return false;
+
+  const speed = Math.hypot(ball.vx, ball.vy);
+  if (plan.pending) {
+    let atRail = false;
+    if (plan.rail === 'top' && ball.y <= TT + R + 0.6) atRail = true;
+    if (plan.rail === 'bottom' && ball.y >= TB - R - 0.6) atRail = true;
+    if (plan.rail === 'left' && ball.x <= TL + R + 0.6) atRail = true;
+    if (plan.rail === 'right' && ball.x >= TR - R - 0.6) atRail = true;
+    if (!atRail) return false;
+
+    if (plan.rail === 'top') ball.y = TT + R;
+    if (plan.rail === 'bottom') ball.y = TB - R;
+    if (plan.rail === 'left') ball.x = TL + R;
+    if (plan.rail === 'right') ball.x = TR - R;
+
+    ball.vx = plan.along.x * speed * 0.94;
+    ball.vy = plan.along.y * speed * 0.94;
+    plan.pending = false;
+    plan.active = true;
+    ball.wallHug = plan;
+    markRailContact();
+    playCushionSound(speed);
+    return true;
+  }
+
+  if (!plan.active) return false;
+  if (plan.rail === 'top' || plan.rail === 'bottom') {
+    ball.y = plan.rail === 'top' ? TT + R : TB - R;
+    ball.vy = 0;
+    const clampedX = clamp(ball.x, TL + R, TR - R);
+    if (clampedX !== ball.x) {
+      ball.x = clampedX;
+      ball.vx *= -0.75;
+    }
+  } else {
+    ball.x = plan.rail === 'left' ? TL + R : TR - R;
+    ball.vx = 0;
+    const clampedY = clamp(ball.y, TT + R, TB - R);
+    if (clampedY !== ball.y) {
+      ball.y = clampedY;
+      ball.vy *= -0.75;
+    }
+  }
+  return true;
+}
+
 function resolveCushion(b) {
+  if (resolveWallHugCushion(b)) return;
   if (b.x - R < TL) {
     if (b.vx < 0) playCushionSound(Math.abs(b.vx));
     b.x = TL + R;
@@ -1087,18 +1144,22 @@ function resolveBallCollisions() {
           }
           if (
             shot &&
-            shot.lTarget &&
-            !shot.lApplied &&
-            shot.lDirection &&
+            shot.wallTarget &&
+            !shot.wallApplied &&
+            shot.wallPlan &&
             (a === cueBall || b === cueBall)
           ) {
-            const lBall = a === shot.lTarget ? a : b === shot.lTarget ? b : null;
-            if (lBall) {
-              const lSpeed = Math.hypot(lBall.vx, lBall.vy);
-              if (lSpeed > 1) {
-                lBall.vx = shot.lDirection.x * lSpeed;
-                lBall.vy = shot.lDirection.y * lSpeed;
-                shot.lApplied = true;
+            const wallBall = a === shot.wallTarget ? a : b === shot.wallTarget ? b : null;
+            if (wallBall) {
+              const wallSpeed = Math.hypot(wallBall.vx, wallBall.vy);
+              if (wallSpeed > 1) {
+                wallBall.vx = shot.wallPlan.approach.x * wallSpeed;
+                wallBall.vy = shot.wallPlan.approach.y * wallSpeed;
+                wallBall.wallHug = {
+                  ...shot.wallPlan,
+                  pending: true
+                };
+                shot.wallApplied = true;
               }
             }
           }
@@ -1209,16 +1270,15 @@ function doShoot(pw) {
   const activeHit = raycast(cueBall, { x: dx, y: dy }, [cueBall, ...jumpBalls]);
   const arcTarget = skills.arc ? activeHit.ball : null;
   const arcAngle = skills.arc ? skills.curveAngle : 0;
-  const lTarget = skills.l ? activeHit.ball : null;
-  const lDirection = lTarget
-    ? chooseLShotDirection({ x: dx, y: dy }, lTarget)
-    : null;
+  const wallTarget = skills.wall ? activeHit.ball : null;
+  const wallPlan = wallTarget ? chooseWallHugPlan(wallTarget) : null;
 
   state.aiThinking = false;
   for (const ball of balls) {
     ball.curveSide = 0;
     ball.curveDistance = 0;
     ball.curveRate = CURVE_CURVATURE;
+    ball.wallHug = null;
   }
   cueBall.vx = dx * speed;
   cueBall.vy = dy * speed;
@@ -1252,14 +1312,15 @@ function doShoot(pw) {
     arcTarget,
     arcAngle,
     arcApplied: false,
-    lTarget,
-    lDirection,
-    lApplied: false,
+    wallTarget,
+    wallPlan,
+    wallApplied: false,
     groupClearedAtShotStart: g ? groupCleared(g) : false
   };
 
   skills.jump = false;
-  skills.l = false;
+  if (skills.wall) skills.wallUsed = true;
+  skills.wall = false;
   skills.arc = false;
   skills.jumpTarget = null;
   skills.jumpLocked = false;
@@ -2088,10 +2149,10 @@ function updateSkillUI() {
   const jumpActive = enabled && skills.jump;
   elSkillDock.classList.toggle('hidden', !enabled);
   elSkillJump.disabled = !enabled;
-  elSkillL.disabled = !enabled;
+  elSkillWall.disabled = !enabled || skills.wallUsed;
   elSkillCurve.disabled = !enabled;
   elSkillJump.classList.toggle('active', jumpActive);
-  elSkillL.classList.toggle('active', enabled && skills.l);
+  elSkillWall.classList.toggle('active', enabled && skills.wall);
   elSkillLock.hidden = !jumpActive || !skills.jumpLocked;
   elSkillLock.disabled = !jumpActive || !skills.jumpLocked;
   elSkillLock.classList.toggle('active', jumpActive && skills.jumpLocked);
@@ -2108,25 +2169,25 @@ function toggleSkill(type) {
   if (!canUseSkills()) return;
   cancelShotDrag();
   if (type === 'jump') skills.jump = !skills.jump;
-  if (type === 'l') skills.l = !skills.l;
+  if (type === 'wall' && !skills.wallUsed) skills.wall = !skills.wall;
   if (type === 'curve') skills.arc = !skills.arc;
-  if (skills.l && skills.arc) {
-    if (type === 'l') skills.arc = false;
-    else if (type === 'curve') skills.l = false;
+  if (skills.wall && skills.arc) {
+    if (type === 'wall') skills.arc = false;
+    else if (type === 'curve') skills.wall = false;
   }
   if (type === 'jump') {
     skills.jumpTarget = null;
     skills.jumpLocked = false;
   }
 
-  if (skills.jump && skills.l) {
-    state.msg = '跳球 + L球：越过阻挡后，目标球轨迹转 90°';
+  if (skills.jump && skills.wall) {
+    state.msg = '跳球 + 贴墙球：越过后目标球贴库滑行';
   } else if (skills.jump && skills.arc) {
     state.msg = `跳球 + 弧球：越过全部阻挡后，目标球转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else if (skills.jump) {
     state.msg = '跳球已启用：请直接点选要跳到的目标球';
-  } else if (skills.l) {
-    state.msg = 'L球已启用：目标球撞击后转 90°';
+  } else if (skills.wall) {
+    state.msg = '贴墙球已启用：目标球将走向最近库边并沿墙滑行';
   } else if (skills.arc) {
     state.msg = `弧球已启用：目标球将转弯 ${formatCurveAngle(skills.curveAngle)}`;
   } else {
@@ -2476,24 +2537,110 @@ function findJumpTarget(dir, forcedTarget = null, locked = false) {
   return { target, skipped };
 }
 
-function chooseLShotDirection(incomingDir, target) {
-  const horizontalIncoming = Math.abs(incomingDir.x) >= Math.abs(incomingDir.y);
-  const candidates = horizontalIncoming
-    ? [{ x: 0, y: 1 }, { x: 0, y: -1 }]
-    : [{ x: 1, y: 0 }, { x: -1, y: 0 }];
+function predictionPathLength(path) {
+  if (!path || !path.points || path.points.length < 2) return 0;
+  let distance = 0;
+  for (let index = 1; index < path.points.length; index++) {
+    distance += Math.hypot(
+      path.points[index].x - path.points[index - 1].x,
+      path.points[index].y - path.points[index - 1].y
+    );
+  }
+  return distance;
+}
+
+function chooseWallHugPlan(target) {
+  const rails = [
+    {
+      rail: 'top',
+      approach: { x: 0, y: -1 },
+      wallPoint: { x: target.x, y: TT + R },
+      alongOptions: [{ x: 1, y: 0 }, { x: -1, y: 0 }]
+    },
+    {
+      rail: 'bottom',
+      approach: { x: 0, y: 1 },
+      wallPoint: { x: target.x, y: TB - R },
+      alongOptions: [{ x: 1, y: 0 }, { x: -1, y: 0 }]
+    },
+    {
+      rail: 'left',
+      approach: { x: -1, y: 0 },
+      wallPoint: { x: TL + R, y: target.y },
+      alongOptions: [{ x: 0, y: 1 }, { x: 0, y: -1 }]
+    },
+    {
+      rail: 'right',
+      approach: { x: 1, y: 0 },
+      wallPoint: { x: TR - R, y: target.y },
+      alongOptions: [{ x: 0, y: 1 }, { x: 0, y: -1 }]
+    }
+  ];
 
   const scorePath = path => {
-    if (path.pocket) return 3200 + path.distance;
-    if (path.ball) return path.distance * 1.8 + path.clearance * 4;
-    return 1000 + path.distance + Math.min(path.clearance, 100) * 4;
+    const distance = predictionPathLength(path);
+    if (path.pocket) return 3200 + distance;
+    if (path.ball) return distance * 1.8 + (path.clearance || 0) * 4;
+    return 1000 + distance + Math.min(path.clearance || 0, 100) * 4;
   };
 
-  return candidates
-    .map(direction => ({
-      direction,
-      score: scorePath(traceBallPath(target, direction, [target], 4))
-    }))
-    .sort((a, b) => b.score - a.score)[0].direction;
+  let best = null;
+  for (const rail of rails) {
+    const approachDistance = Math.hypot(
+      rail.wallPoint.x - target.x,
+      rail.wallPoint.y - target.y
+    );
+    const approachPath = traceBallPath(target, rail.approach, [target], 0);
+    const blockedBeforeWall = Boolean(
+      approachPath.ball &&
+      predictionPathLength(approachPath) < approachDistance - 0.5
+    );
+    if (blockedBeforeWall) continue;
+
+    for (const along of rail.alongOptions) {
+      const alongPath = traceBallPath(rail.wallPoint, along, [target], 4);
+      const score = scorePath(alongPath) - approachDistance * 2;
+      if (!best || score > best.score) {
+        best = {
+          rail: rail.rail,
+          wallPoint: { ...rail.wallPoint },
+          approach: { ...rail.approach },
+          along: { ...along },
+          score
+        };
+      }
+    }
+  }
+
+  return best || {
+    rail: 'top',
+    wallPoint: { x: target.x, y: TT + R },
+    approach: { x: 0, y: -1 },
+    along: { x: 1, y: 0 },
+    score: -Infinity
+  };
+}
+
+function traceWallHugPath(target, plan) {
+  const approach = traceBallPath(target, plan.approach, [target], 0);
+  if (approach.ball) return approach;
+  const along = traceBallPath(plan.wallPoint, plan.along, [target], 4);
+  const approachDistance = Math.hypot(
+    plan.wallPoint.x - target.x,
+    plan.wallPoint.y - target.y
+  );
+  const points = [
+    { x: target.x, y: target.y },
+    ...approach.points.slice(1),
+    ...along.points.slice(1)
+  ];
+  return {
+    points,
+    ball: along.ball,
+    pocket: along.pocket,
+    clearance: along.clearance,
+    distance: approachDistance + predictionPathLength(along)
+  };
 }
 
 function clampAimToLockedJumpTarget() {
@@ -2614,9 +2761,9 @@ function computeAim() {
         ARC_TURN_DISTANCE,
         angle / ARC_TURN_DISTANCE
       );
-    } else if (skills.l) {
-      out.lDirection = chooseLShotDirection(dir, target);
-      out.targetPath = traceBallPath(target, out.lDirection, [target], 4);
+    } else if (skills.wall) {
+      out.wallPlan = chooseWallHugPlan(target);
+      out.targetPath = traceWallHugPath(target, out.wallPlan);
     } else {
       out.targetPath = traceBallPath(target, objectDir, [target], 4);
     }
@@ -2934,6 +3081,14 @@ function drawAim() {
       target.x + Math.cos(labelAngle) * (radius + 13),
       target.y + Math.sin(labelAngle) * (radius + 13)
     );
+  }
+
+  if (skills.wall && aim.targetBall) {
+    ctx.fillStyle = 'rgba(255,225,150,.98)';
+    ctx.font = 'bold 10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('贴墙', aim.targetBall.x, aim.targetBall.y - R - 12);
   }
 
   ctx.restore();
@@ -3465,7 +3620,7 @@ const elChooseFirst = document.getElementById('chooseFirst');
 const elChooseSecond = document.getElementById('chooseSecond');
 const elSkillDock = document.getElementById('skillDock');
 const elSkillJump = document.getElementById('skillJump');
-const elSkillL = document.getElementById('skillL');
+const elSkillWall = document.getElementById('skillWall');
 const elSkillLock = document.getElementById('skillLock');
 const elSkillLockName = document.getElementById('skillLockName');
 const elSkillCurve = document.getElementById('skillCurve');
@@ -3494,6 +3649,7 @@ const elRaceScoreP2 = document.getElementById('raceScoreP2');
 function updateHUD() {
   elMsg.textContent = state.msg;
   const showRaceScore = gameMode === 'race4' && matchState !== 'menu';
+  document.documentElement.classList.toggle('race-mode', showRaceScore);
   elRaceScoreBoard.classList.toggle('visible', showRaceScore);
   elRaceScoreP1.textContent = String(raceScores[0]);
   elRaceScoreP2.textContent = String(raceScores[1]);
@@ -3544,7 +3700,7 @@ elSkinMonochrome.addEventListener('click', () => applyButtonSkin('monochrome'));
 elControlTouch.addEventListener('click', () => applyControlMode('touch'));
 elControlMouse.addEventListener('click', () => applyControlMode('mouse'));
 elSkillJump.addEventListener('click', () => toggleSkill('jump'));
-elSkillL.addEventListener('click', () => toggleSkill('l'));
+elSkillWall.addEventListener('click', () => toggleSkill('wall'));
 elSkillLock.addEventListener('click', toggleJumpLock);
 elSkillCurve.addEventListener('click', () => toggleSkill('curve'));
 elCurveAngle.addEventListener('input', e => {
