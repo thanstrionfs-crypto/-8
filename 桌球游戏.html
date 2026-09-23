@@ -56,7 +56,7 @@
   .group-badge.show { display: grid; }
   .group-badge.solid { background: #d39d00; color: #161616; }
   .group-badge.stripe { background: #f3f1e8; color: #123b8a; }
-  .player-info { min-width: 0; display: grid; gap: 3px; }
+  .player-info { min-width: 0; display: grid; gap: 3px; flex: 1 1 auto; }
   .player-name {
     display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     font-weight: 650; color: #dce7f2; font-size: 11px;
@@ -100,27 +100,19 @@
     display: flex; justify-content: flex-end; align-items: center; gap: 4px;
     transition: opacity .2s, visibility .2s;
   }
-  #raceScoreBoard {
-    position: fixed; z-index: 9; top: 5px; left: 50%;
-    transform: translateX(-50%); display: none;
-    align-items: center; gap: 8px; pointer-events: none;
-    padding: 1px 12px; border-radius: 9px;
-    color: #f5e2ac; background: rgba(8,14,18,.22);
-    border: 1px solid rgba(240,197,107,.22);
+  .race-score {
+    display: none;
+    flex: 0 0 auto;
+    margin-left: auto;
+    min-width: 32px;
+    text-align: right;
+    font-size: 30px;
+    line-height: 1;
+    font-weight: 900;
+    color: #fff2c9;
     text-shadow: 0 2px 8px rgba(0,0,0,.72);
   }
-  #raceScoreBoard.visible { display: flex; }
-  html.race-mode { --table-width: min(99vw, calc((100vh - 122px) * 1.7778)); }
-  html.race-mode #hud { margin-top: 50px; }
-  #raceScoreBoard .score-number {
-    min-width: 34px; font-size: 36px; line-height: 1;
-    font-weight: 900; text-align: center; color: #fff2c9;
-  }
-  #raceScoreBoard .score-separator { font-size: 27px; color: #d6ad58; font-weight: 900; }
-  #raceScoreBoard .score-label {
-    font-size: 10px; font-weight: 800; letter-spacing: 1px;
-    color: #e3bd6f; align-self: flex-end; margin-bottom: 2px;
-  }
+  html.race-mode .race-score { display: inline-block; }
   #skillDock.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
   .skill-button {
     width: 64px; min-height: 22px; padding: 2px 5px;
@@ -349,10 +341,7 @@
     .skill-icon { font-size: 12px; }
     .curve-control { width: 170px; min-height: 21px; padding: 2px 5px; }
     .curve-control input { width: 130px; }
-    #raceScoreBoard { top: 2px; gap: 5px; padding: 0 8px; }
-    #raceScoreBoard .score-number { min-width: 24px; font-size: 26px; }
-    #raceScoreBoard .score-separator { font-size: 20px; }
-    #raceScoreBoard .score-label { font-size: 8px; }
+    .race-score { min-width: 20px; font-size: 20px; }
   }
 
   @media (min-width: 761px) {
@@ -361,7 +350,6 @@
 
   @media (max-width: 760px) and (orientation: portrait) {
     html.is-mobile { --table-width: min(100%, calc((100vh - 96px) / 1.7778)); }
-    html.is-mobile.race-mode { --table-width: min(100%, calc((100vh - 142px) / 1.7778)); }
     html.is-mobile #tableWrap {
       width: var(--table-width);
       height: calc(var(--table-width) * 1.7778);
@@ -484,6 +472,7 @@
       <span class="player-name" id="n1">你</span>
       <div class="ball-strip" id="b1"></div>
     </div>
+    <span class="race-score" id="raceScoreP1">0</span>
   </div>
   <div id="msg">等待开始</div>
   <div class="player-panel" id="p2">
@@ -492,6 +481,7 @@
       <span class="player-name" id="n2">电脑 AI</span>
       <div class="ball-strip" id="b2"></div>
     </div>
+    <span class="race-score" id="raceScoreP2">0</span>
   </div>
 </div>
 
@@ -529,12 +519,6 @@
   </div>
 </div>
 <div id="tip">移动鼠标瞄准 · 按住左键朝拉杆方向移动 · 移动越远力度越大 · 松开击球</div>
-<div id="raceScoreBoard" aria-live="polite">
-  <span class="score-number" id="raceScoreP1">0</span>
-  <span class="score-separator">:</span>
-  <span class="score-number" id="raceScoreP2">0</span>
-  <span class="score-label">抢4</span>
-</div>
 <div id="orientationHint"><div><strong>请竖屏使用</strong>手机端已针对竖屏布局优化</div></div>
 
 <script>
@@ -3642,7 +3626,6 @@ const elSkinPicker = document.getElementById('skinPicker');
 const elSkinList = document.getElementById('skinList');
 const elSkinClassic = document.getElementById('skinClassic');
 const elSkinMonochrome = document.getElementById('skinMonochrome');
-const elRaceScoreBoard = document.getElementById('raceScoreBoard');
 const elRaceScoreP1 = document.getElementById('raceScoreP1');
 const elRaceScoreP2 = document.getElementById('raceScoreP2');
 
@@ -3650,7 +3633,6 @@ function updateHUD() {
   elMsg.textContent = state.msg;
   const showRaceScore = gameMode === 'race4' && matchState !== 'menu';
   document.documentElement.classList.toggle('race-mode', showRaceScore);
-  elRaceScoreBoard.classList.toggle('visible', showRaceScore);
   elRaceScoreP1.textContent = String(raceScores[0]);
   elRaceScoreP2.textContent = String(raceScores[1]);
   elP1.classList.toggle('active', matchState === 'playing' && state.player === 0 && state.phase !== 'over');
